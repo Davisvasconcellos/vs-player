@@ -37,7 +37,14 @@ const playPauseIcons = {
         player: { // Novo: estado do player
             isPlaying: false,
             delayTimeout: null,
+            isSeeking: false,
+            countdownInterval: null,
+        },
+        volume: {
+            current: 70,
+            previous: 70
         }
+
     };
 
     // ===== Helpers =====
