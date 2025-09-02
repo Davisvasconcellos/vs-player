@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>ShowPlay • Player</title>
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ShowPlay">
+    <link rel="stylesheet" href="style.css?v=23">
+</head>
+<body>
+    <div class="app" id="app" data-theme="dark">
+        <div class="header">
+            <button class="btn btn-back" id="btnBack" style="display:none">⟨</button>
+            <div class="title" id="headerTitle">Minhas Playlists</div>
+            <div class="actions">
+                <div class="segmented" id="viewToggle" style="display:none">
+                    <button id="btnList" class="btnList active" aria-label="Modo Lista">Lista</button>
+                    <button id="btnLive" class="btnLive" aria-label="Modo Live">Live</button>
+                </div>
+                <button class="btn-ghost" id="themeToggle" title="Tema">☀︎</button>
+            </div>
+        </div>
+        <div class="volume-global" aria-label="Volume global">
+            <div id="volumeIcon" class="volume-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+            </div>
+            <input type="range" id="volumeGlobal" min="0" max="100" value="70" />
+        </div>
+        <section class="screen" id="screenLibrary">
+            <div class="screen-content" id="playlistsGrid">
+                <div class="grid">
+                    </div>
+                <div class="spacer"></div>
+            </div>
+            <button class="fab" id="addPlaylistBtn">+</button>
+        </section>
+
+        <section class="screen" id="screenPlaylist">
+            <div class="screen-content">
+                <div class="player-card" id="playerCard">
+                    <div class="player-cover">
+                        <video class="player-media" id="playerMedia" src="" muted playsinline></video>
+                        <div class="player-info">
+                            <h1 class="player-title" id="nowTitle">SONG TITLE</h1>
+                            <p class="player-artist" id="nowArtist">Singer</p>
+                            <button class="close-btn" id="btnClosePlayer">×</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="listMode" class="list">
+                </div>
+                <div id="liveMode" class="pads" style="display:none">
+                </div>
+                
+                <!-- MINI PLAYER AQUI -->
+
+                <div><h1>MINI PLAYER</h1></div>
+                <div class="mini-player-fixed" id="miniPlayer">
+                    <div class="mini-info">
+                        <div id="miniTitle" class="mini-title"></div>
+                        <div class="progress-wrapper">
+                            <div class="progress-bar">
+                                <div id="miniProgress" class="progress-bar-fill"></div>
+                            </div>
+                            <span id="miniCurrentTime">0:00</span>
+                        </div>
+                    </div>
+                    <div class="mini-controls">
+                        <button class="ctl" id="miniPrev" aria-label="Anterior">⟨⟨</button>
+                        <button class="ctl primary" id="miniPlay" aria-label="Play/Pause">▶</button>
+                        <button class="ctl" id="miniNext" aria-label="Próxima">⟩⟩</button>
+                    </div>
+                </div>
+
+
+            </div>
+        </section>
+
+    </div>
+
+    
+    <div id="playlistModal" class="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Criar Nova Playlist</h3>
+            <div>
+                <label for="playlistNameInput">Nome da Playlist</label>
+                <input type="text" id="playlistNameInput" placeholder="Nome">
+            </div>
+            <div>
+                <label>Capa da Playlist (Opcional)</label>
+                <div class="cover-preview" id="coverPreview">
+                    <span>Clique para adicionar uma capa</span>
+                </div>
+                <input type="file" id="coverFileInput" accept="image/*" style="display:none;">
+            </div>
+            <div id="tracksSection" style="display:none;">
+                <label>Faixas</label>
+                <div class="add-files-area" id="addTracksBtn">
+                    + Adicionar Músicas
+                </div>
+                <input type="file" class="file-input" id="tracksFileInput" multiple accept="audio/*">
+                <div class="modal-track-list" id="modalTrackList">
+                    </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-cancel" id="cancelPlaylistBtn">Cancelar</button>
+                <button class="btn-remove" id="removePlaylistBtn" style="display: none;">Remover</button>
+                <button class="btn-save" id="savePlaylistBtn">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Novo: Overlay de Contagem Regressiva -->
+    <div class="countdown-overlay" id="countdownOverlay">
+        <span id="countdownNumber"></span>
+    </div>
+
+    <script type="module" src="app.js?v=27"></script>
+</body>
+</html>
