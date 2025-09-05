@@ -17,6 +17,7 @@
     --header-height: 59px;
     --volume-bar-height: 45px;
     --player-card-height: 280px;
+    --mobile-header-height: 90px; /* Altura do header em telas pequenas */
 }
 [data-theme="light"] {
     --bg: #ffffff;
@@ -59,18 +60,16 @@ html, body {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none; /* Firefox */
 }
-/* Oculta a barra de rolagem no WebKit (Chrome, Safari) */
-.scroll-container::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
-}
 /* ====== Header ====== */
 .header {
-    height: calc(var(--header-height) - 29px); /* 30px + 28px padding - 1px border */
-    position: sticky; top: 0; z-index: 20;
+    height: var(--header-height);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px var(--pad);
+    padding: 0 var(--pad);
     background: var(--bg-elev); /* Usa bg-elev para o header */
     border-bottom: 1px solid var(--border);
 }
@@ -81,6 +80,10 @@ html, body {
     padding: 10px; border-radius: 12px;
     cursor: pointer;
 }
+
+.btn-miniPlayer {
+    padding: 0;
+}
 .btn-ghost { 
     padding: 0; 
     font-size: 20px;
@@ -90,7 +93,8 @@ html, body {
     margin-left: 10px; 
     height: 42px; 
     width: 70px; 
-    border: 1px solid var(--border); }
+    border: 1px solid var(--border);
+}
 .btn-accent { background: var(--accent); color: #fff; }
 .btnList { font-size: 18px; height: 42px;}
 .btnLive { font-size: 18px; }
@@ -108,11 +112,13 @@ html, body {
     padding: 8px var(--pad);
     background: var(--bg-elev); /* Usa bg-elev para o volume global */
     border-bottom: 1px solid var(--border);
-    position: sticky;
+    position: fixed;
     top: var(--header-height); /* abaixo do header */
+    left: 0;
+    right: 0;
     z-index: 15;
     gap: 10px;
-    height: calc(var(--volume-bar-height) - 17px);
+    height: var(--volume-bar-height);
 }
 .volume-global input[type="range"] {
     width: 100%;
@@ -157,22 +163,38 @@ html, body {
 /* Novo contêiner para rolagem */
 .screen-content {
     flex-grow: 1;
-    padding: 0 var(--pad) var(--pad);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-}
-.screen-content::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
+    padding: calc(var(--header-height) + var(--volume-bar-height) + var(--pad)) var(--pad) var(--pad);
+    /* A rolagem agora é gerenciada por elementos filhos como #listMode e #liveMode */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 /* Ajuste de padding para a tela da biblioteca */
-#screenLibrary .grid {
-    margin-top: var(--pad);
+/* ====== Playlist – List Mode & Live Mode Scrolling ====== */
+/* Os contêineres de modo de visualização agora são responsáveis pela rolagem */
+#listMode, #liveMode {
+    flex-grow: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: var(--border) transparent; /* Firefox */
+    min-height: 0; /* Necessário para o flex-grow funcionar corretamente em um contêiner flex */
+    /* Adiciona um espaçamento no final para o mini-player não cobrir o último item */
+    padding-bottom: 90px;
 }
-#screenLibrary .screen-content {
-    padding-top: var(--pad);
+/* Estilização da barra de rolagem para WebKit (Chrome, Safari) */
+#listMode::-webkit-scrollbar,
+#liveMode::-webkit-scrollbar {
+    width: 8px; /* Largura da barra de rolagem */
+}
+#listMode::-webkit-scrollbar-track,
+#liveMode::-webkit-scrollbar-track {
+    background: transparent; /* Fundo da trilha */
+}
+#listMode::-webkit-scrollbar-thumb,
+#liveMode::-webkit-scrollbar-thumb {
+    background-color: var(--border); /* Cor da barra */
+    border-radius: 4px; /* Bordas arredondadas */
 }
 /* ====== Playlists Grid ====== */
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); }
@@ -225,8 +247,9 @@ html, body {
     border-radius: 50%;
     width: 30px;
     height: 30px;
-    display: grid;
-    place-items: center;
+    display: flex; /* Usando Flexbox para máxima compatibilidade */
+    justify-content: center;
+    align-items: center;
     cursor: pointer;
     padding: 0;
     transition: background 0.2s ease;
@@ -264,7 +287,6 @@ html, body {
 .list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
     margin-top: 8px;
 }
 .row {
@@ -277,6 +299,10 @@ html, body {
     border:1px solid var(--border);
     cursor: pointer;
     transition: background .2s ease;
+    margin-bottom: 8px; /* Fallback para 'gap', mais compatível */
+}
+.list .row:last-child {
+    margin-bottom: 0; /* Remove a margem do último item */
 }
 .row.active {
     background: var(--accent);
@@ -306,9 +332,13 @@ html, body {
     border:1px solid var(--border);
     color: var(--muted);
     font-weight:700;
+    cursor: move; /* Indica que este elemento é um cabo para arrastar */
 }
 .row .meta { flex:1; }
-.row .title { font-weight:600; }
+.row .title {
+    font-weight: 600;
+    font-size: 16px; /* Tamanho padrão para desktop */
+}
 .row .artist { color: var(--muted); font-size: 12px; }
 /* Delay Input ajustado */
 .delay-input {
@@ -366,8 +396,16 @@ html, body {
 .row.active .play.open-player svg {
     fill: #fff;
 }
-/* Drag-and-Drop Estilos */
-.dragging { opacity: 0.5; }
+/* Drag-and-Drop Estilos - Efeito de "flutuar" para o item sendo arrastado */
+.row.dragging {
+    opacity: 0.8;
+    background: var(--border);
+    transform: scale(1.02);
+    box-shadow: var(--shadow);
+    border-color: var(--accent);
+    position: relative; /* Garante que o z-index funcione corretamente */
+    z-index: 5;
+}
 .drag-over { background: var(--border) !important; }
 
 /* ====== Playlist – Live (Pads) ====== */
@@ -402,7 +440,7 @@ html, body {
     color: #fff;
 }
 .pad .big { font-size: 40px; font-weight: 800; line-height: 1; color: var(--text); }
-.pad .label { margin-top: 4px; color: var(--muted); font-size: 14px; }
+.pad .label { margin-top: 4px; color: var(--muted); font-size: 20px;font-weight: 800; }
 .pad .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 /* ====== Player Card (Novo) ====== */
@@ -525,8 +563,10 @@ html, body {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 50%;
-    display: grid;
-    place-items: center;
+    display: flex; /* Usando Flexbox para melhor compatibilidade de alinhamento */
+    justify-content: center;
+    align-items: center;
+    padding: 0 !important; /* Garante que não haja padding interno que desalinhe o ícone SVG */
     font-size: 16px;
 }
 .mini-player-fixed .ctl.primary {
@@ -534,6 +574,18 @@ html, body {
     color: #fff;
     border: none;
 }
+    /* Estilos para os novos ícones SVG nos controles */
+    .mini-player-fixed .ctl svg {
+        width: 24px;
+        height: 24px;
+        fill: currentColor; /* Faz o SVG herdar a cor do texto do botão */
+        pointer-events: none; /* Garante que o clique seja no botão, não no SVG */
+    }
+    /* Ajuste para o botão principal ser um pouco maior */
+    .mini-player-fixed .ctl.primary svg {
+        width: 28px;
+        height: 28px;
+    }
 /* Novo: Estilo do Modal */
 .modal {
     display: none; /* Inicia oculto */
@@ -729,4 +781,44 @@ html, body {
 @keyframes flash {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.6; transform: scale(0.98); }
+}
+
+/* ====== Estilos para Telas Pequenas (Celulares) ====== */
+@media (max-width: 600px) {
+    .header {
+        height: var(--mobile-header-height); /* Define uma altura maior e fixa para o header */
+        flex-wrap: wrap; /* Permite que os itens quebrem para a próxima linha */
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+
+    .volume-global {
+        top: var(--mobile-header-height); /* Posiciona abaixo do novo header */
+    }
+
+    .header .title {
+        order: 3; /* Move o título para o final do fluxo flex */
+        width: 100%; /* Faz o título ocupar a largura total */
+        text-align: center; /* Centraliza o texto do título */
+        margin-top: 8px;
+        font-size: 18px; /* Ajusta o tamanho do título da playlist */
+    }
+
+    /* Adicionado para corrigir o alinhamento do botão de tema */
+    .header .actions {
+        margin-left: auto; /* Garante que o bloco de ações fique sempre à direita */
+    }
+
+    /* Ajusta o tamanho da fonte na lista de faixas */
+    .row .title {
+        font-size: 15px;
+    }
+    .row .artist {
+        font-size: 12px;
+    }
+
+    /* Ajusta o padding do conteúdo para não ficar atrás do header/volume fixos */
+    .screen-content {
+        padding-top: calc(var(--mobile-header-height) + var(--volume-bar-height) + var(--pad));
+    }
 }

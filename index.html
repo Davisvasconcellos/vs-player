@@ -3,11 +3,14 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-    <title>ShowPlay • Player</title>
+    <title>VSPlayer</title>
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ShowPlay">
-    <link rel="stylesheet" href="style.css?v=23">
+    <meta name="apple-mobile-web-app-title" content="VSPlayer">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css?v=59">
 </head>
 <body>
     <div class="app" id="app" data-theme="dark">
@@ -57,8 +60,10 @@
                 </div>
                 
                 <!-- MINI PLAYER AQUI -->
-
-                <div><h1>MINI PLAYER</h1></div>
+                <div id="debugLog" style="background: #222; border: 1px solid #444; padding: 8px; margin-bottom: 8px; border-radius: 8px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 12px; display: none;">
+                    <h4 style="margin: 0 0 5px 0; color: #eee;">Debug Log (Toque para limpar)</h4>
+                    <div id="debugLogContent"></div>
+                </div>
                 <div class="mini-player-fixed" id="miniPlayer">
                     <div class="mini-info">
                         <div id="miniTitle" class="mini-title"></div>
@@ -70,9 +75,18 @@
                         </div>
                     </div>
                     <div class="mini-controls">
-                        <button class="ctl" id="miniPrev" aria-label="Anterior">⟨⟨</button>
-                        <button class="ctl primary" id="miniPlay" aria-label="Play/Pause">▶</button>
-                        <button class="ctl" id="miniNext" aria-label="Próxima">⟩⟩</button>
+                        <button class="ctl btn-miniPlayer" id="miniPrev" aria-label="Anterior">
+                            <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path></svg>
+                        </button>
+                        <button class="ctl btn-miniPlayer primary" id="miniPlay" aria-label="Play/Pause">
+                            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                        </button>
+                        <button class="ctl btn-miniPlayer" id="miniNext" aria-label="Próxima">
+                            <svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM8 18l8.5-6L8 6v12z"></path></svg>
+                        </button>
+                        <button class="ctl btn-miniPlayer" id="fullscreenBtn" aria-label="Tela Cheia">
+                            <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 2h-2v3h-3v2h5v-5zm-3-4V5h-2v5h5V7h-3z"></path></svg>
+                        </button>
                     </div>
                 </div>
 
@@ -119,6 +133,6 @@
         <span id="countdownNumber"></span>
     </div>
 
-    <script type="module" src="app.js?v=27"></script>
+    <script type="module" src="app.js?v=58"></script>
 </body>
 </html>

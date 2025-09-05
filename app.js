@@ -6,24 +6,29 @@ import { setupNavigation, setupViewToggle } from './modules/navigation.js';
 // ---- miniPlayer CONFIG----
 let audio = null;
 const playPauseIcons = {
-    play: '▶',
-    pause: '❚❚',
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>',
 };
 
+/**
+ * Verifica se o dispositivo é um dispositivo móvel da Apple (iPhone/iPad).
+ * @returns {boolean} True se for um dispositivo móvel da Apple.
+ */
+function isAppleMobile() {
+    // iPads modernos (iPadOS 13+) se identificam como 'MacIntel' mas têm touch
+    const isModernIPad = (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // Dispositivos Apple mais antigos e iPhones
+    const isLegacyAppleDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    return isModernIPad || isLegacyAppleDevice;
+}
 
 (function() {
     'use strict';
 
-    // ===== IndexedDB Helper =====
-    // Movido para modules/db.js
-
     // ===== Seletores e Constantes =====
-    const $ = (sel) => document.querySelector(sel);
-    const $$ = (sel) => document.querySelectorAll(sel);
     const svgEdit = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fff"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
-    let currentDragSrcEl = null;
 
-// ===== Estado Global da Aplicação =====
+    // ===== Estado Global da Aplicação =====
     const state = {
         playlists: [],
         currentPlaylistIndex: -1,
@@ -33,31 +38,19 @@ const playPauseIcons = {
             tracks: [],
             cover: null
         },
-        currentTrackIndex: -1, // Novo: índice da faixa atual
-        player: { // Novo: estado do player
+        currentTrackIndex: -1,
+        player: {
             isPlaying: false,
             delayTimeout: null,
             isSeeking: false,
             countdownInterval: null,
+            currentObjectUrl: null, // Para gerenciar a URL do áudio e evitar memory leaks
         },
         volume: {
             current: 70,
             previous: 70
         }
-
     };
-
-    // ===== Helpers =====
-// Remova a seção de Helpers do seu app.js
-// movido para module
-
-
-
-
-    
-    // ===== Tema =====
-// movido para module
-
 
     // ===== Lógica de Playlists e Modal =====
     async function loadPlaylists() {
@@ -73,6 +66,16 @@ const playPauseIcons = {
 
     function renderPlaylists() {
         const grid = $('#screenLibrary .grid');
+        // Limpar Object URLs antigas das capas para evitar memory leaks
+        grid.querySelectorAll('.card .thumb').forEach(thumb => {
+            const style = thumb.style.backgroundImage;
+            // Verifica se o estilo contém uma URL de blob
+            if (style && style.includes('blob:')) {
+                // Extrai a URL e a revoga
+                const url = style.match(/url\("?(blob:.+?)"?\)/)[1];
+                if (url) URL.revokeObjectURL(url);
+            }
+        });
         grid.innerHTML = '';
         if (state.playlists.length === 0) {
             grid.innerHTML = '<p style="text-align: center; color: var(--muted); padding: 20px;">Nenhuma playlist. Clique no "+" para adicionar.</p>';
@@ -213,6 +216,14 @@ const playPauseIcons = {
     }
     
     function closeModal() {
+        // Limpar Object URL da capa no modal para evitar memory leak
+        const coverPreview = $('#coverPreview');
+        const style = coverPreview.style.backgroundImage;
+        if (style && style.includes('blob:')) {
+            const url = style.match(/url\("?(blob:.+?)"?\)/)[1];
+            if (url) URL.revokeObjectURL(url);
+        }
+
         $('#playlistModal').classList.remove('active');
         state.modal.cover = null;
         state.modal.tracks = [];
@@ -350,40 +361,256 @@ const playPauseIcons = {
         });
     }
 
-// --- miniPlayer FUNCTIONS
-    async function playTrack(track, index) {
-        if (!audio || !track.fileKey) {
-            console.error(`Erro: Áudio ou fileKey não encontrado para "${track.title}"`);
-            alert(`Erro: Não foi possível reproduzir "${track.title}"`); // Temporário para iPad
+    // --- miniPlayer FUNCTIONS ---
+    /**
+     * Função principal para tocar uma faixa pelo seu índice na playlist.
+     * Usada tanto pelo clique do usuário quanto pelo autoplay.
+     * @param {number} index O índice da faixa na playlist atual.
+     */
+    async function playTrackByIndex(index) {
+        const playlist = state.playlists[state.currentPlaylistIndex];
+        if (!playlist) return;
+        const track = playlist.tracks[index];
+        if (!track) {
+            log(`ERRO: Faixa no índice ${index} não encontrada.`);
             return;
         }
+
+        log(`--- Iniciando reprodução de: "${track.title}" ---`);
+        
+        // Limpa qualquer contagem regressiva ou delay pendente
+        $('#countdownOverlay').classList.remove('active');
+        if (state.player.countdownInterval) {
+            clearInterval(state.player.countdownInterval);
+            state.player.countdownInterval = null;
+        }
+        if (state.player.delayTimeout) clearTimeout(state.player.delayTimeout);
+
+        const miniTitle = $('#miniTitle');
+        if (miniTitle) miniTitle.textContent = track.title;
+
         try {
+            // Resetar a barra de progresso e o tempo ao carregar uma nova faixa
+            $('#miniProgress').style.width = '0%';
+            $('#miniCurrentTime').textContent = '0:00';
+
             const audioFile = await dbActions.get(FILES_STORE, track.fileKey);
             if (!audioFile) {
-                console.error(`Arquivo não encontrado para "${track.title}"`);
-                alert(`Erro: Arquivo não encontrado para "${track.title}"`); // Temporário para iPad
+                log(`ERRO: Arquivo não encontrado no DB para "${track.title}".`);
                 return;
             }
+            
             audio.pause();
+            if (state.player.currentObjectUrl) {
+                URL.revokeObjectURL(state.player.currentObjectUrl);
+            }
+
+            const newUrl = URL.createObjectURL(audioFile);
+            state.player.currentObjectUrl = newUrl;
+            audio.src = newUrl;
+            audio.volume = state.volume.current / 100;
+            audio.muted = false;
             state.currentTrackIndex = index;
-            state.player.isPlaying = true;
-            console.log(`Arquivo carregado: tipo=${audioFile.type}, tamanho=${audioFile.size} bytes`);
-            alert(`Arquivo: tipo=${audioFile.type}, tamanho=${audioFile.size} bytes`); // Temporário para iPad
-            audio.src = URL.createObjectURL(audioFile);
-            await audio.play();
-            const miniTitle = $('#miniTitle');
-            if (miniTitle) miniTitle.textContent = track.title;
-            const miniPlay = $('#miniPlay');
-            if (miniPlay) miniPlay.innerHTML = playPauseIcons.pause;
-            alert(`Reproduzindo: ${track.title}`); // Temporário para iPad
-        } catch (e) {
-            console.error(`Detalhes do erro: ${e.name} - ${e.message}`);
-            alert(`Erro detalhado: ${e.name} - ${e.message}`); // Temporário para iPad
-            console.error(`Erro ao reproduzir "${track.title}": ${e.message}`);
-            alert(`Erro ao reproduzir "${track.title}": ${e.message}`); // Temporário para iPad
-            state.player.isPlaying = false;
-            const miniPlay = $('#miniPlay');
-            if (miniPlay) miniPlay.innerHTML = playPauseIcons.play;
+
+            // Atualiza a UI para destacar a nova faixa
+            updateActiveTrackUI(index);
+
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    log(`ERRO AO TOCAR: ${error.name} - ${error.message}`);
+                });
+            }
+        } catch (error) {
+            log(`ERRO GERAL em playTrackByIndex: ${error.name} - ${error.message}`);
+        }
+    }
+
+    /**
+     * Atualiza a UI para destacar a faixa atualmente em reprodução.
+     * @param {number} index O índice da faixa a ser destacada.
+     */
+    function updateActiveTrackUI(index) {
+        // Remove a classe 'active' de qualquer item anteriormente ativo
+        document.querySelectorAll('#listMode .row.active, #liveMode .pad.active').forEach(el => {
+            el.classList.remove('active');
+        });
+
+        // Adiciona a classe 'active' ao novo item na lista
+        const activeRow = document.querySelector(`#listMode .row[data-track-index="${index}"]`);
+        if (activeRow) {
+            activeRow.classList.add('active');
+        }
+
+        // Adiciona a classe 'active' ao novo item nos pads
+        const activePad = document.querySelector(`#liveMode .pad[data-track-index="${index}"]`);
+        if (activePad) {
+            activePad.classList.add('active');
+        }
+    }
+
+    /**
+     * Inicia a próxima faixa da playlist após um delay.
+     * Chamado quando o evento 'ended' do áudio é disparado.
+     */
+    function playNextTrack() {
+        const playlist = state.playlists[state.currentPlaylistIndex];
+        if (!playlist || state.currentTrackIndex === -1) return;
+
+        const currentTrack = playlist.tracks[state.currentTrackIndex];
+        const delayInSeconds = currentTrack.delay || 0;
+
+        log(`Faixa terminada. Delay definido: ${delayInSeconds}s.`);
+
+        // Limpa timers anteriores para segurança
+        if (state.player.delayTimeout) clearTimeout(state.player.delayTimeout);
+        if (state.player.countdownInterval) clearInterval(state.player.countdownInterval);
+
+        const playNext = () => {
+            let nextIndex = state.currentTrackIndex + 1;
+            if (nextIndex >= playlist.tracks.length) {
+                log('Fim da playlist, reiniciando.');
+                nextIndex = 0; // Loop back to the start
+            }
+            log(`Tocando próxima faixa no índice: ${nextIndex}`);
+            playTrackByIndex(nextIndex);
+        };
+
+        if (delayInSeconds > 0) {
+            const overlay = $('#countdownOverlay');
+            const numberEl = $('#countdownNumber');
+            let countdown = delayInSeconds;
+
+            overlay.classList.add('active');
+            numberEl.textContent = countdown;
+
+            state.player.countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) numberEl.textContent = countdown;
+            }, 1000);
+
+            state.player.delayTimeout = setTimeout(playNext, delayInSeconds * 1000);
+        } else {
+            playNext(); // Sem delay, toca imediatamente
+        }
+    }
+
+    /**
+     * Alterna entre tocar e pausar o áudio.
+     * Chamado pelo botão de play/pause do mini-player.
+     */
+    function togglePlayPause() {
+        const playlist = state.playlists[state.currentPlaylistIndex];
+        if (state.currentTrackIndex === -1) { // No track selected yet
+            if (playlist && playlist.tracks.length > 0) {
+                playTrackByIndex(0);
+            }
+            return;
+        }
+
+        if (audio.paused) {
+            audio.play();
+        } else {
+            audio.pause();
+        }
+    }
+
+    /**
+     * Atualiza a barra de progresso e o tempo da música.
+     * Chamado pelo evento 'timeupdate' do áudio.
+     */
+    function updateProgress() {
+        if (!audio.duration) return; // Evita divisão por zero se a duração não for conhecida
+        const progressPercent = (audio.currentTime / audio.duration) * 100;
+        $('#miniProgress').style.width = `${progressPercent}%`;
+        $('#miniCurrentTime').textContent = formatTime(audio.currentTime);
+    }
+
+    /**
+     * Navega para um ponto específico da música.
+     * Chamado pelo clique na barra de progresso.
+     * @param {MouseEvent} event O evento de clique.
+     */
+    function seek(event) {
+        const progressBar = event.currentTarget; // O elemento com o listener (.progress-bar)
+        const clickX = event.offsetX;
+        const barWidth = progressBar.clientWidth;
+        const duration = audio.duration;
+
+        if (duration) {
+            const newTime = (clickX / barWidth) * duration;
+            audio.currentTime = newTime;
+        }
+    }
+
+    /**
+     * Pula para a próxima faixa da playlist.
+     * Chamado pelo botão 'next' do mini-player.
+     */
+    function skipToNext() {
+        const playlist = state.playlists[state.currentPlaylistIndex];
+        if (!playlist || playlist.tracks.length === 0) return;
+
+        let nextIndex = state.currentTrackIndex + 1;
+        if (nextIndex >= playlist.tracks.length) {
+            nextIndex = 0; // Volta para o início
+        }
+        playTrackByIndex(nextIndex);
+    }
+
+    /**
+     * Pula para a faixa anterior da playlist.
+     * Chamado pelo botão 'previous' do mini-player.
+     */
+    function skipToPrevious() {
+        const playlist = state.playlists[state.currentPlaylistIndex];
+        if (!playlist || playlist.tracks.length === 0) return;
+
+        // Se a música tocou por mais de 3s, reinicia. Senão, volta.
+        if (audio.currentTime > 3) {
+            audio.currentTime = 0;
+            return;
+        }
+
+        let prevIndex = state.currentTrackIndex - 1;
+        if (prevIndex < 0) {
+            prevIndex = playlist.tracks.length - 1; // Vai para o final
+        }
+        playTrackByIndex(prevIndex);
+    }
+
+    /**
+     * Lida com a mudança do controle de volume global.
+     * @param {Event} event O evento de input do range slider.
+     */
+    function handleVolumeChange(event) {
+        const newVolume = parseInt(event.target.value, 10);
+        state.volume.current = newVolume;
+        audio.volume = newVolume / 100;
+
+        // Atualiza o ícone de volume para feedback visual
+        const volumeIcon = $('#volumeIcon');
+        if (newVolume === 0) {
+            // Ícone de Mudo
+            volumeIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`;
+        } else {
+            // Ícone de Volume Padrão
+            volumeIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+        }
+    }
+
+    /**
+     * Alterna o modo de tela cheia do aplicativo.
+     */
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                log(`Erro ao tentar entrar em tela cheia: ${err.message}`);
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
         }
     }
 
@@ -391,29 +618,31 @@ const playPauseIcons = {
         const delayInput = element.querySelector('.delay-input');
         if (delayInput) {
             delayInput.addEventListener('input', function() {
-                track.delay = Math.max(0, Math.min(300, parseInt(this.value || 0)));
-                this.value = track.delay;
-                dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
+                const newDelay = Math.max(0, Math.min(300, parseInt(this.value || 0)));
+                const playlist = state.playlists[state.currentPlaylistIndex];
+                if (playlist && playlist.tracks[index]) {
+                    // Atualiza o estado diretamente para garantir consistência
+                    playlist.tracks[index].delay = newDelay;
+                    this.value = newDelay;
+                    dbActions.put(PLAYLISTS_STORE, playlist);
+                }
+
                 const correspondingPad = $(`.pad[data-track-index="${index}"]`);
                 if (correspondingPad) {
                     const subElement = correspondingPad.querySelector('.sub');
-                    if (subElement) {
-                        subElement.textContent = `${track.duration} • Delay ${track.delay}s`;
-                    }
+                    if (subElement) subElement.textContent = `${track.duration} • Delay ${newDelay}s`;
                 }
             });
-
-            element.addEventListener('click', (e) => {
-                if (e.target.closest('.delay-input')) return;
-                playTrack(track, index);
-            });
         }
-        // Eventos de Toque (adicionado para o suporte móvel)
+
+        element.addEventListener('click', (e) => {
+            if (e.target.closest('.delay-input')) return;
+            playTrackByIndex(index);
+        });
+
         element.addEventListener('touchstart', handleTouchStart, { passive: false });
         element.addEventListener('touchmove', handleTouchMove, { passive: false });
         element.addEventListener('touchend', handleTouchEnd);
-        
-        // Eventos de Mouse (manter para o desktop)
         element.addEventListener('dragstart', handleDragStart);
         element.addEventListener('dragover', handleDragOver);
         element.addEventListener('dragleave', handleDragLeave);
@@ -421,11 +650,16 @@ const playPauseIcons = {
         element.addEventListener('dragend', handleDragEnd);
     }
     
-    // ===== Lógica de Drag-and-Drop para Mouse e Toque =====
     function handleDragStart(e) {
-        this.style.opacity = '0.4';
+        // Apenas permite que o arrastar comece a partir do "cabo" de numeração
+        if (!e.target.closest('.num')) {
+            e.preventDefault();
+            return;
+        }
         state.dragSrcEl = this;
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', this.innerHTML); // Necessário para o Firefox
+        this.classList.add('dragging');
     }
     
     function handleDragOver(e) {
@@ -443,33 +677,33 @@ const playPauseIcons = {
         if (state.dragSrcEl !== this) {
             reorderTracks(state.dragSrcEl, this);
         }
-        handleDragEnd.call(this); // Chama a lógica de finalização
+        handleDragEnd.call(this);
     }
 
     function handleDragEnd() {
-        this.style.opacity = '1';
+        this.classList.remove('dragging');
         $$('.row, .pad').forEach(item => item.classList.remove('drag-over'));
         state.dragSrcEl = null;
     }
     
-    // Funções de Toque (reproduzem a lógica de drag-and-drop)
     function handleTouchStart(e) {
+        // Apenas permite que o arrastar comece a partir do "cabo" de numeração
+        if (!e.target.closest('.num')) {
+            return;
+        }
         e.stopPropagation();
-        currentDragSrcEl = this;
+        state.dragSrcEl = this;
         this.classList.add('dragging');
     }
 
     function handleTouchMove(e) {
-        e.preventDefault();
-        if (!currentDragSrcEl) return;
-
+        if (!state.dragSrcEl) return;
+        e.preventDefault(); // Previne a rolagem da página enquanto arrasta um item
         const touch = e.touches[0];
         const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-
-        if (!targetEl || !targetEl.closest('.row')) return;
-        const dropTarget = targetEl.closest('.row');
-
-        if (dropTarget !== currentDragSrcEl) {
+        if (!targetEl || !targetEl.closest('.row, .pad')) return;
+        const dropTarget = targetEl.closest('.row, .pad');
+        if (dropTarget !== state.dragSrcEl) {
             $$('.row, .pad').forEach(el => el.classList.remove('drag-over'));
             dropTarget.classList.add('drag-over');
         }
@@ -477,77 +711,125 @@ const playPauseIcons = {
 
     function handleTouchEnd(e) {
         e.stopPropagation();
-        if (!currentDragSrcEl) return;
-
+        if (!state.dragSrcEl) return;
         const touch = e.changedTouches[0];
         const dropTargetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-
         if (dropTargetEl) {
-            const dropTarget = dropTargetEl.closest('.row');
-            if (dropTarget && dropTarget !== currentDragSrcEl) {
-                reorderTracks(currentDragSrcEl, dropTarget);
+            const dropTarget = dropTargetEl.closest('.row, .pad');
+            if (dropTarget && dropTarget !== state.dragSrcEl) {
+                reorderTracks(state.dragSrcEl, dropTarget);
             }
         }
         handleTouchEndCleanUp();
     }
     
     function handleTouchEndCleanUp() {
-        if (currentDragSrcEl) {
-            currentDragSrcEl.classList.remove('dragging');
+        if (state.dragSrcEl) {
+            state.dragSrcEl.classList.remove('dragging');
         }
         $$('.row, .pad').forEach(el => el.classList.remove('drag-over'));
-        currentDragSrcEl = null;
+        state.dragSrcEl = null;
     }
     
-    // Função unificada para reordenar a lista, agora compatível com modo "Lista" e "Live"
     function reorderTracks(sourceEl, targetEl) {
-        // Certifique-se de que os elementos têm os datasets corretos
         const fromIndex = parseInt(sourceEl.dataset.trackIndex);
         const toIndex = parseInt(targetEl.dataset.trackIndex);
-
-        // Reorganiza o array de faixas
         const tracks = state.playlists[state.currentPlaylistIndex].tracks;
         const [draggedItem] = tracks.splice(fromIndex, 1);
         tracks.splice(toIndex, 0, draggedItem);
-        
-        // Salva a nova ordem no IndexedDB e renderiza
         dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
         renderList();
         renderPads();
     }
-    
-    // ===== Navegação e View Toggle =====
-    // movido para modules/navigation.js
-
 
     // ===== Inicialização do App =====
     async function init() {
         document.addEventListener('DOMContentLoaded', async () => {
-           // player
-            audio = $('#playerMedia');
-            if (!audio) {
-                log('ERRO: Elemento #playerMedia não encontrado');
+            // Registra o Service Worker para habilitar a funcionalidade PWA
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js').then(registration => {
+                        log('ServiceWorker registrado com sucesso.');
+                    }).catch(err => {
+                        log(`Falha no registro do ServiceWorker: ${err}`);
+                    });
+                });
             }
-           // banco
+
+            // Adiciona uma classe ao body se for um dispositivo móvel da Apple para ocultar o volume
+            if (isAppleMobile()) {
+                document.body.classList.add('is-apple-mobile');
+            }
+
+            // Inicializar elemento de áudio
+            audio = $('#playerMedia');
+            if (!audio) { // Fallback se o elemento não existir no HTML
+                audio = new Audio();
+                log('AVISO: Elemento #playerMedia não encontrado, criando um novo elemento de áudio dinamicamente.');
+            }
+
+            // Pré-carregar áudio no iOS após interação do usuário
+            document.body.addEventListener('touchstart', () => {
+                if (!audio.src) {
+                    audio.load();
+                    log('Pré-carregando áudio no iOS');
+                }
+            }, { once: true });
             try {
                 await openDB();
                 log('Conexão com IndexedDB estabelecida.');
             } catch (e) {
                 log(`ERRO: Falha na conexão com IndexedDB: ${e.message}`);
             }
-            // tema
             const savedTheme = localStorage.getItem('showplay_theme') || 'dark';
             if (savedTheme) applyTheme(savedTheme);
             $('#themeToggle').addEventListener('click', toggleTheme);
-            // playlists
-            await loadPlaylists();
-            setupPlaylistModal();
-            setupNavigation(state, renderPlaylists, showScreen); // Chama a função importada
-            setupViewToggle(); // Chama a função importada
+            
+            await loadPlaylists(); // Carrega as playlists
+
+            setupPlaylistModal(); // Configura o modal de playlist
+
+            // Chama a função setupNavigation importada.
+            // A lógica para limpar o destaque da faixa ativa e resetar o currentTrackIndex
+            // ao clicar no botão 'Voltar' já está implementada dentro da função setupNavigation
+            // em './modules/navigation.js' (conforme discussões e diffs anteriores que removeram
+            // a definição local de setupNavigation deste arquivo).
+            // Portanto, o bloco de código que tentava reatribuir setupNavigation era redundante
+            // e causava o erro de "Assignment to constant variable".
+            setupNavigation(state, renderPlaylists, showScreen); 
+
+            // A lógica para o btnBack já está dentro de setupNavigation em modules/navigation.js
+
+            setupViewToggle();
+
+            // --- Event Listeners do Player ---
+            $('#miniPlay').addEventListener('click', togglePlayPause);
+            audio.addEventListener('ended', playNextTrack);
+            $('#volumeGlobal').addEventListener('input', handleVolumeChange);
+            $('#miniNext').addEventListener('click', skipToNext);
+            $('#miniPrev').addEventListener('click', skipToPrevious);
+            $('#fullscreenBtn').addEventListener('click', toggleFullScreen);
+            audio.addEventListener('play', () => {
+                state.player.isPlaying = true;
+                $('#miniPlay').innerHTML = playPauseIcons.pause;
+            });
+            audio.addEventListener('pause', () => {
+                state.player.isPlaying = false;
+                $('#miniPlay').innerHTML = playPauseIcons.play;
+            });
+            // Adiciona listeners para a barra de progresso
+            audio.addEventListener('timeupdate', updateProgress);
+            $('.progress-bar').addEventListener('click', seek);
+
+            // Adiciona listener para limpar o log de debug
+            const debugLog = $('#debugLog');
+            if (debugLog) {
+                debugLog.addEventListener('click', () => $('#debugLogContent').innerHTML = '');
+            }
+
             showScreen('#screenLibrary');
         });
     }
 
     init();
-
 })();

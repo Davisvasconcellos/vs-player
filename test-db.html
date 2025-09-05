@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de IndexedDB para Arquivos</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f5;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+        input[type="file"] {
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            background-color: #007bff;
+            color: #fff;
+            cursor: pointer;
+        }
+        #logOutput {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #333;
+            color: #fff;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 12px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Teste de Salvamento no IndexedDB</h1>
+        <p>Selecione um arquivo para salvar no banco de dados.</p>
+        <input type="file" id="fileInput">
+        <button id="saveButton" disabled>1. Salvar Arquivo</button>
+        <hr style="margin: 20px 0; border: 1px solid #eee;">
+        <h2>Teste de Reprodução</h2>
+        <p>Após salvar, clique em "Tocar" para reproduzir o último arquivo salvo.</p>
+        <button id="playButton" disabled>2. Tocar Último Arquivo Salvo</button>
+        <audio id="testPlayer" controls style="width: 100%; margin-top: 15px;"></audio>
+        <div id="logOutput">
+            <h2>Log de Eventos</h2>
+        </div>
+    </div>
+
+    <script>
+        // ===== Lógica de IndexedDB (igual à do seu app.js) =====
+        const DB_NAME = 'showplayDB';
+        const DB_VERSION = 1;
+        const FILES_STORE = 'files';
+        let db;
+
+        function log(message) {
+            const logOutput = document.getElementById('logOutput');
+            const entry = document.createElement('p');
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logOutput.appendChild(entry);
+            logOutput.scrollTop = logOutput.scrollHeight;
+            console.log(`[LOG] ${message}`);
+        }
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                if (db) return resolve(db);
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = (event) => {
+                    const dbInstance = event.target.result;
+                    if (!dbInstance.objectStoreNames.contains(FILES_STORE)) {
+                        dbInstance.createObjectStore(FILES_STORE, { autoIncrement: true });
+                    }
+                };
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    resolve(db);
+                };
+                request.onerror = (event) => {
+                    console.error('Database error:', event.target.error);
+                    reject(event.target.error);
+                };
+            });
+        }
+
+        function dbRequest(storeName, mode, action) {
+            return openDB().then(db => {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(storeName, mode);
+                    const store = transaction.objectStore(storeName);
+                    const request = action(store);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            });
+        }
+
+        const dbActions = {
+            add: (storeName, item) => dbRequest(storeName, 'readwrite', store => store.add(item)),
+            get: (storeName, key) => dbRequest(storeName, 'readonly', store => store.get(key)),
+        };
+
+        // ===== Lógica de Teste =====
+        const fileInput = document.getElementById('fileInput');
+        const saveButton = document.getElementById('saveButton');
+        const playButton = document.getElementById('playButton');
+        const testPlayer = document.getElementById('testPlayer');
+        let fileToSave = null;
+        let lastSavedKey = null;
+
+        fileInput.addEventListener('change', (e) => {
+            log('Arquivo selecionado.');
+            const files = e.target.files;
+            if (files.length > 0) {
+                fileToSave = files[0];
+                saveButton.disabled = false;
+                log(`Pronto para salvar: ${fileToSave.name}`);
+            } else {
+                fileToSave = null;
+                saveButton.disabled = true;
+            }
+        });
+
+        saveButton.addEventListener('click', async () => {
+            if (!fileToSave) {
+                log('Nenhum arquivo para salvar.');
+                return;
+            }
+
+            log(`Iniciando salvamento do arquivo: ${fileToSave.name}`);
+            try {
+                const key = await dbActions.add(FILES_STORE, fileToSave);
+                lastSavedKey = key;
+                log(`SUCESSO: Arquivo salvo com a chave: ${key}`);
+                playButton.disabled = false;
+            } catch (e) {
+                log(`ERRO: Falha ao salvar o arquivo: ${e.message}`);
+                console.error(e);
+            }
+        });
+
+        playButton.addEventListener('click', async () => {
+            if (!lastSavedKey) {
+                log('Nenhuma chave de arquivo salva para reproduzir.');
+                return;
+            }
+
+            log(`Tentando reproduzir arquivo com a chave: ${lastSavedKey}`);
+            try {
+                const fileBlob = await dbActions.get(FILES_STORE, lastSavedKey);
+                if (!fileBlob) {
+                    log(`ERRO: Arquivo com chave ${lastSavedKey} não encontrado no DB.`);
+                    return;
+                }
+
+                log(`Arquivo recuperado: ${fileBlob.name}, tipo: ${fileBlob.type}`);
+                
+                const objectURL = URL.createObjectURL(fileBlob);
+                testPlayer.src = objectURL;
+                testPlayer.muted = false; // Essencial para tocar
+                
+                log('Fonte do player definida. Tentando reproduzir...');
+                await testPlayer.play();
+                log('SUCESSO: A reprodução foi iniciada.');
+            } catch (e) {
+                log(`ERRO ao tentar reproduzir: ${e.name} - ${e.message}`);
+                console.error(e);
+            }
+        });
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', async () => {
+            log('Iniciando o teste. Conectando ao IndexedDB...');
+            await openDB();
+            log('Conexão com IndexedDB estabelecida.');
+        });
+    </script>
+</body>
+</html>
