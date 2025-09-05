@@ -42,6 +42,10 @@ html, body {
     line-height: 1.35;
     overflow-x: hidden;
 }
+
+.header-logo{
+    height: 30px;
+}
 .app {
     max-width: 100%;
     max-width: none;
@@ -179,8 +183,6 @@ html, body {
     scrollbar-width: thin; /* Firefox */
     scrollbar-color: var(--border) transparent; /* Firefox */
     min-height: 0; /* Necessário para o flex-grow funcionar corretamente em um contêiner flex */
-    /* Adiciona um espaçamento no final para o mini-player não cobrir o último item */
-    padding-bottom: 90px;
 }
 /* Estilização da barra de rolagem para WebKit (Chrome, Safari) */
 #listMode::-webkit-scrollbar,
@@ -666,7 +668,7 @@ html, body {
 }
 .modal-actions .btn-cancel {
     background: #b5b1b169;
-    color: #e0e2e7;
+    color: #949597;;
 }
 .modal-actions .btn-remove {
     background: var(--accent);

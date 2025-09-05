@@ -1,4 +1,4 @@
-import { $, $$, log, showScreen, formatTime, parseTimeToSeconds, resizeAndCompressImage } from './modules/helpers.js';
+import { $, $$, log, showScreen as originalShowScreen, formatTime, parseTimeToSeconds, resizeAndCompressImage } from './modules/helpers.js';
 import { applyTheme, toggleTheme } from './modules/theme.js';
 import { openDB, dbActions, PLAYLISTS_STORE, FILES_STORE } from './modules/db.js';
 import { setupNavigation, setupViewToggle } from './modules/navigation.js';
@@ -51,6 +51,25 @@ function isAppleMobile() {
             previous: 70
         }
     };
+
+    /**
+     * Wrapper para a função showScreen que também atualiza o estado do header (logo/botão voltar).
+     * Centraliza a lógica de visibilidade dos elementos do header.
+     * @param {string} screenId O ID da tela a ser exibida.
+     */
+    function showScreen(screenId) {
+        const headerLogo = $('#headerLogo');
+        const btnBack = $('#btnBack');
+
+        if (screenId === '#screenPlaylist') {
+            if (headerLogo) headerLogo.style.display = 'none';
+            if (btnBack) btnBack.style.display = 'flex';
+        } else { // Default to library view
+            if (headerLogo) headerLogo.style.display = 'block';
+            if (btnBack) btnBack.style.display = 'none';
+        }
+        originalShowScreen(screenId); // Chama a função original importada de helpers.js
+    }
 
     // ===== Lógica de Playlists e Modal =====
     async function loadPlaylists() {
@@ -125,7 +144,7 @@ function isAppleMobile() {
         $('#headerTitle').textContent = playlist.name;
         renderList();
         renderPads();
-        showScreen('#screenPlaylist');
+        showScreen('#screenPlaylist'); // A nova função showScreen já lida com o header
     }
     
     function setupPlaylistModal() {
@@ -440,12 +459,16 @@ function isAppleMobile() {
         const activeRow = document.querySelector(`#listMode .row[data-track-index="${index}"]`);
         if (activeRow) {
             activeRow.classList.add('active');
+            // Faz a lista rolar suavemente para a faixa ativa
+            activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         // Adiciona a classe 'active' ao novo item nos pads
         const activePad = document.querySelector(`#liveMode .pad[data-track-index="${index}"]`);
         if (activePad) {
             activePad.classList.add('active');
+            // Faz a grade de pads rolar suavemente para a faixa ativa
+            activePad.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
 
@@ -783,8 +806,34 @@ function isAppleMobile() {
             }
             const savedTheme = localStorage.getItem('showplay_theme') || 'dark';
             if (savedTheme) applyTheme(savedTheme);
-            $('#themeToggle').addEventListener('click', toggleTheme);
             
+            // --- Lógica para Logo Dinâmico com Base no Tema ---
+            const logo = $('#headerLogo');
+
+            function updateLogoForTheme(theme) {
+                if (logo) {
+                    logo.src = theme === 'light' ? 'icons/logo-light.png' : 'icons/logo-dark.png';
+                }
+            }
+
+            function handleThemeToggle() {
+                // Lê o tema atual da fonte de verdade (localStorage) para evitar inconsistências do DOM
+                const currentTheme = localStorage.getItem('showplay_theme') || 'dark';
+                const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+                
+                // Usa a função do módulo para aplicar o tema visualmente
+                applyTheme(nextTheme);
+                // Salva a nova preferência
+                localStorage.setItem('showplay_theme', nextTheme);
+                updateLogoForTheme(nextTheme);
+            }
+
+            // Define o logo inicial
+            updateLogoForTheme(savedTheme);
+
+            // Conecta o nosso wrapper ao botão
+            $('#themeToggle').addEventListener('click', handleThemeToggle);
+
             await loadPlaylists(); // Carrega as playlists
 
             setupPlaylistModal(); // Configura o modal de playlist
@@ -796,9 +845,7 @@ function isAppleMobile() {
             // a definição local de setupNavigation deste arquivo).
             // Portanto, o bloco de código que tentava reatribuir setupNavigation era redundante
             // e causava o erro de "Assignment to constant variable".
-            setupNavigation(state, renderPlaylists, showScreen); 
-
-            // A lógica para o btnBack já está dentro de setupNavigation em modules/navigation.js
+            setupNavigation(state, renderPlaylists, showScreen); // Passa a nova função showScreen que controla o header
 
             setupViewToggle();
 
@@ -827,7 +874,7 @@ function isAppleMobile() {
                 debugLog.addEventListener('click', () => $('#debugLogContent').innerHTML = '');
             }
 
-            showScreen('#screenLibrary');
+            showScreen('#screenLibrary'); // Usa a nova função para o estado inicial
         });
     }
 
