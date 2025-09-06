@@ -45,6 +45,7 @@ function isAppleMobile() {
             isSeeking: false,
             countdownInterval: null,
             currentObjectUrl: null, // Para gerenciar a URL do áudio e evitar memory leaks
+            dragSrcEl: null,
         },
         volume: {
             current: 70,
@@ -65,6 +66,10 @@ function isAppleMobile() {
             if (headerLogo) headerLogo.style.display = 'none';
             if (btnBack) btnBack.style.display = 'flex';
         } else { // Default to library view
+            // Ao voltar para a tela de playlists, para e reseta o player.
+            if (state.currentTrackIndex !== -1) {
+                stopAndResetPlayer();
+            }
             if (headerLogo) headerLogo.style.display = 'block';
             if (btnBack) btnBack.style.display = 'none';
         }
@@ -480,6 +485,31 @@ function isAppleMobile() {
             // Faz a grade de pads rolar suavemente para a faixa ativa
             activePad.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
+    }
+
+    /**
+     * Para a reprodução, limpa a fonte do áudio e reseta a UI do mini-player.
+     */
+    function stopAndResetPlayer() {
+        audio.pause();
+        if (state.player.currentObjectUrl) {
+            URL.revokeObjectURL(state.player.currentObjectUrl);
+        }
+        audio.src = ''; // Limpa a fonte do áudio
+        
+        state.currentTrackIndex = -1;
+        state.player.isPlaying = false;
+        state.player.currentObjectUrl = null;
+
+        // Reseta a UI do Mini Player
+        $('#miniTitle').textContent = '';
+        $('#miniProgress').style.width = '0%';
+        $('#miniCurrentTime').textContent = '0:00';
+        $('#miniPlay').innerHTML = playPauseIcons.play;
+        $('#miniPlayer').classList.remove('is-paused');
+
+        updateActiveTrackUI(-1); // Remove o destaque da faixa ativa
+        log('Player parado e resetado.');
     }
 
     /**

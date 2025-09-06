@@ -618,7 +618,8 @@ html, body {
 
     /* --- Cor do Botão Play/Pause quando pausado --- */
     .mini-player-fixed.is-paused #miniPlay {
-        color: var(--paused-color);
+        background-color: var(--paused-color);
+        color: #fff; /* Garante que o ícone SVG permaneça branco */
     }
 
 /* Novo: Estilo do Modal */
