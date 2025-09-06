@@ -12,6 +12,7 @@
     --radius: 16px;
     --shadow: 0 6px 20px rgba(0,0,0,.25);
     --green-accent: #1d7f2c; /* Nova cor verde mais escura */
+    --paused-color: #ff7800; /* Laranja para o estado de pausa */
 
     /* Dimensões para layout */
     --header-height: 59px;
@@ -417,6 +418,25 @@ html, body {
 }
 .drag-over { background: var(--border) !important; }
 
+/* --- Destaque para a Faixa Ativa Pausada --- */
+
+#listMode .row.active.paused,
+#liveMode .pad.active.paused {
+    background-color: var(--paused-color);
+    color: #fff; /* Texto branco para bom contraste com laranja */
+    border-color: var(--paused-color);
+}
+
+#listMode .row.active.paused .num,
+#listMode .row.active.paused .title,
+#listMode .row.active.paused .artist {
+    color: #fff;
+}
+
+#liveMode .pad.active.paused .sub {
+    color: #fff;
+}
+
 /* ====== Playlist – Live (Pads) ====== */
 .pads {
     display:grid;
@@ -595,6 +615,12 @@ html, body {
         width: 28px;
         height: 28px;
     }
+
+    /* --- Cor do Botão Play/Pause quando pausado --- */
+    .mini-player-fixed.is-paused #miniPlay {
+        color: var(--paused-color);
+    }
+
 /* Novo: Estilo do Modal */
 .modal {
     display: none; /* Inicia oculto */

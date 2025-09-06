@@ -670,7 +670,13 @@ function isAppleMobile() {
 
         element.addEventListener('click', (e) => {
             if (e.target.closest('.delay-input')) return;
-            playTrackByIndex(index);
+            // Se a faixa clicada já é a que está tocando, alterna play/pause.
+            if (index === state.currentTrackIndex) {
+                togglePlayPause();
+            } else {
+                // Senão, toca a nova faixa.
+                playTrackByIndex(index);
+            }
         });
 
         element.addEventListener('touchstart', handleTouchStart, { passive: false });
@@ -796,7 +802,7 @@ function isAppleMobile() {
                 if (volumeBar) {
                     volumeBar.style.display = 'none';
                 }
-                document.body.classList.add('is-apple-mobile'); // Adicione esta linha
+                
             }
 
             // Inicializar elemento de áudio
@@ -874,10 +880,18 @@ function isAppleMobile() {
             audio.addEventListener('play', () => {
                 state.player.isPlaying = true;
                 $('#miniPlay').innerHTML = playPauseIcons.pause;
+                $('#miniPlayer').classList.remove('is-paused');
+                // Atualiza AMBOS os elementos (lista e pad) para remover o estado de pausa.
+                const activeTrackEls = document.querySelectorAll('.row.active, .pad.active');
+                activeTrackEls.forEach(el => el.classList.remove('paused'));
             });
             audio.addEventListener('pause', () => {
                 state.player.isPlaying = false;
                 $('#miniPlay').innerHTML = playPauseIcons.play;
+                $('#miniPlayer').classList.add('is-paused');
+                // Atualiza AMBOS os elementos (lista e pad) para adicionar o estado de pausa.
+                const activeTrackEls = document.querySelectorAll('.row.active, .pad.active');
+                activeTrackEls.forEach(el => el.classList.add('paused'));
             });
             // Adiciona listeners para a barra de progresso
             audio.addEventListener('timeupdate', updateProgress);
