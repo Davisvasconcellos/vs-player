@@ -18,6 +18,9 @@
     --volume-bar-height: 45px;
     --player-card-height: 280px;
     --mobile-header-height: 90px; /* Altura do header em telas pequenas */
+
+    /* Variável para controlar o offset da barra de volume. Será 0 em dispositivos Apple. */
+    --volume-bar-offset: var(--volume-bar-height);
 }
 [data-theme="light"] {
     --bg: #ffffff;
@@ -209,14 +212,19 @@ html, body {
     cursor: pointer;
     transition: transform .08s ease;
     position: relative; /* Adicionado para posicionamento do botão de opções */
+    
 }
 .card:active { transform: scale(.98); }
 .thumb {
     height: 120px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border-radius: 12px 12px 0 0; /* Mantém os cantos arredondados no topo */
+    /* Define as propriedades de fundo individualmente para evitar conflitos */
+    background-color: var(--border);
+    /* Usa uma variável para a imagem. Se a variável não for definida, mostra um gradiente. */
+    background-image: var(--playlist-cover-image, linear-gradient(135deg, var(--accent), var(--accent-2)));
     background-size: cover;
     background-position: center;
+    background-repeat: no-repeat;
 }
 .playlist-info {
     padding: 12px;
@@ -289,7 +297,6 @@ html, body {
 .list {
     display: flex;
     flex-direction: column;
-    margin-top: 8px;
 }
 .row {
     display:flex;
@@ -789,9 +796,11 @@ html, body {
 @media (max-width: 600px) {
     .header {
         height: var(--mobile-header-height); /* Define uma altura maior e fixa para o header */
+        box-sizing: border-box; /* Garante que o padding seja incluído na altura total */
         flex-wrap: wrap; /* Permite que os itens quebrem para a próxima linha */
         padding-top: 12px;
         padding-bottom: 12px;
+        align-content: flex-start; /* Alinha as linhas do header no topo, corrigindo a sobreposição */
     }
 
     .volume-global {
@@ -822,5 +831,15 @@ html, body {
     /* Ajusta o padding do conteúdo para não ficar atrás do header/volume fixos */
     .screen-content {
         padding-top: calc(var(--mobile-header-height) + var(--volume-bar-height) + var(--pad));
+    }
+}
+
+/* Sobrescreve o padding para dispositivos Apple, onde a barra de volume está oculta */
+body.is-apple-mobile .screen-content {
+    padding-top: calc(var(--header-height) + var(--pad));
+}
+@media (max-width: 600px) {
+    body.is-apple-mobile .screen-content {
+        padding-top: calc(var(--mobile-header-height) + var(--pad));
     }
 }

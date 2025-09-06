@@ -108,16 +108,11 @@ function isAppleMobile() {
             const card = document.createElement('div');
             card.className = 'card';
             card.dataset.playlistIndex = index;
-            if (playlist.coverKey) {
-                dbActions.get(FILES_STORE, playlist.coverKey).then(file => {
-                    if (file) {
-                        const url = URL.createObjectURL(file);
-                        card.querySelector('.thumb').style.backgroundImage = `url('${url}')`;
-                    }
-                });
-            }
+
+            // 1. Define o HTML do card sem estilos inline conflitantes.
+            // O CSS cuidará do fundo padrão (gradiente).
             card.innerHTML = `
-                <div class="thumb" style="background: linear-gradient(135deg, var(--accent), var(--accent-2));"></div>
+                <div class="thumb"></div>
                 <button class="options-btn" data-index="${index}">${svgEdit}</button>
                 <div class="playlist-info">
                     <h3>${playlist.name}</h3>
@@ -127,6 +122,21 @@ function isAppleMobile() {
                     </div>
                 </div>
             `;
+
+            // 2. Encontra o elemento .thumb recém-criado.
+            const thumb = card.querySelector('.thumb');
+
+            // 3. Se houver uma capa, define a variável CSS em vez da propriedade de estilo.
+            // Isso evita o conflito que anula o 'background-size: contain'.
+            if (playlist.coverKey && thumb) {
+                dbActions.get(FILES_STORE, playlist.coverKey).then(file => {
+                    if (file) {
+                        const url = URL.createObjectURL(file);
+                        thumb.style.setProperty('--playlist-cover-image', `url('${url}')`);
+                    }
+                });
+            }
+
             card.addEventListener('click', (e) => {
                 if (!e.target.closest('.options-btn')) navigateToPlaylist(index);
             });
@@ -779,9 +789,14 @@ function isAppleMobile() {
                 });
             }
 
-            // Adiciona uma classe ao body se for um dispositivo móvel da Apple para ocultar o volume
+            // Oculta a barra de volume em dispositivos Apple, agora que a detecção foi confirmada.
+            // Usamos JS diretamente para evitar problemas de especificidade ou cache do CSS.
             if (isAppleMobile()) {
-                document.body.classList.add('is-apple-mobile');
+                const volumeBar = $('.volume-global');
+                if (volumeBar) {
+                    volumeBar.style.display = 'none';
+                }
+                document.body.classList.add('is-apple-mobile'); // Adicione esta linha
             }
 
             // Inicializar elemento de áudio
