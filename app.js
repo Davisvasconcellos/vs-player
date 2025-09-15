@@ -44,8 +44,17 @@ function isAppleMobile() {
             delayTimeout: null,
             isSeeking: false,
             countdownInterval: null,
-            currentObjectUrl: null, // Para gerenciar a URL do áudio e evitar memory leaks
+            currentObjectUrl: null,
             dragSrcEl: null,
+            // Propriedades para o motor de rolagem
+            masterScrollInterval: null,
+            isPrompterSticky: false,
+            currentScrollTop: 0,
+            scrollPause: { 
+                isPaused: false,      // True se a rolagem estiver pausada por uma tag
+                pauseEndTime: 0,      // O tempo (timestamp) em que a pausa atual deve terminar
+                pausePoints: [],      // O "mapa" com a posição e duração de todas as pausas
+            }
         },
         volume: {
             current: 70,
@@ -91,7 +100,7 @@ function isAppleMobile() {
     function renderPlaylists() {
         const grid = $('#screenLibrary .grid');
         // Limpar Object URLs antigas das capas para evitar memory leaks
-        grid.querySelectorAll('.card .thumb').forEach(thumb => {
+        grid.querySelectorAll('.card .thumb').forEach(function(thumb) {
             const style = thumb.style.backgroundImage;
             // Verifica se o estilo contém uma URL de blob
             if (style && style.includes('blob:')) {
@@ -105,8 +114,8 @@ function isAppleMobile() {
             grid.innerHTML = '<p style="text-align: center; color: var(--muted); padding: 20px;">Nenhuma playlist. Clique no "+" para adicionar.</p>';
             return;
         }
-        state.playlists.forEach((playlist, index) => {
-            const totalDurationInSeconds = playlist.tracks.reduce((total, track) => {
+        state.playlists.forEach(function(playlist, index) {
+            const totalDurationInSeconds = playlist.tracks.reduce(function(total, track) {
                 return total + parseTimeToSeconds(track.duration);
             }, 0);
             const totalDurationFormatted = formatTime(totalDurationInSeconds);
@@ -114,8 +123,6 @@ function isAppleMobile() {
             card.className = 'card';
             card.dataset.playlistIndex = index;
 
-            // 1. Define o HTML do card sem estilos inline conflitantes.
-            // O CSS cuidará do fundo padrão (gradiente).
             card.innerHTML = `
                 <div class="thumb"></div>
                 <button class="options-btn" data-index="${index}">${svgEdit}</button>
@@ -128,13 +135,10 @@ function isAppleMobile() {
                 </div>
             `;
 
-            // 2. Encontra o elemento .thumb recém-criado.
             const thumb = card.querySelector('.thumb');
 
-            // 3. Se houver uma capa, define a variável CSS em vez da propriedade de estilo.
-            // Isso evita o conflito que anula o 'background-size: contain'.
             if (playlist.coverKey && thumb) {
-                dbActions.get(FILES_STORE, playlist.coverKey).then(file => {
+                dbActions.get(FILES_STORE, playlist.coverKey).then(function(file) {
                     if (file) {
                         const url = URL.createObjectURL(file);
                         thumb.style.setProperty('--playlist-cover-image', `url('${url}')`);
@@ -142,10 +146,10 @@ function isAppleMobile() {
                 });
             }
 
-            card.addEventListener('click', (e) => {
+            card.addEventListener('click', function(e) {
                 if (!e.target.closest('.options-btn')) navigateToPlaylist(index);
             });
-            card.querySelector('.options-btn').addEventListener('click', (e) => {
+            card.querySelector('.options-btn').addEventListener('click', function(e) {
                 e.stopPropagation();
                 openModalForEdit(index);
             });
@@ -159,7 +163,7 @@ function isAppleMobile() {
         $('#headerTitle').textContent = playlist.name;
         renderList();
         renderPads();
-        showScreen('#screenPlaylist'); // A nova função showScreen já lida com o header
+        showScreen('#screenPlaylist');
     }
     
     function setupPlaylistModal() {
@@ -250,7 +254,6 @@ function isAppleMobile() {
     }
     
     function closeModal() {
-        // Limpar Object URL da capa no modal para evitar memory leak
         const coverPreview = $('#coverPreview');
         const style = coverPreview.style.backgroundImage;
         if (style && style.includes('blob:')) {
@@ -269,50 +272,36 @@ function isAppleMobile() {
             alert('Por favor, insira um nome para a playlist.');
             return;
         }
-        log('Iniciando o salvamento da playlist.');
         let coverKey = state.isEditing ? state.playlists[state.currentPlaylistIndex].coverKey : null;
         if (state.modal.cover instanceof File) {
-            log('Capa da playlist é um novo arquivo. Salvando no IndexedDB...');
-            coverKey = await dbActions.add(FILES_STORE, state.modal.cover).catch(e => {
-                log(`ERRO: Falha ao salvar a capa: ${e.message}`);
-                return null;
-            });
-            log(`Capa salva com a chave: ${coverKey}`);
+            coverKey = await dbActions.add(FILES_STORE, state.modal.cover);
         }
         const tracksWithKeys = [];
         for (const track of state.modal.tracks) {
             if (track.file instanceof File) {
-                log(`Processando faixa para salvamento: ${track.title}`);
-                const fileKey = await dbActions.add(FILES_STORE, track.file).catch(e => {
-                    log(`ERRO: Falha ao salvar o arquivo de áudio "${track.title}": ${e.message}`);
-                    return null;
+                const fileKey = await dbActions.add(FILES_STORE, track.file);
+                tracksWithKeys.push({ 
+                    title: track.title, 
+                    artist: track.artist, 
+                    delay: track.delay, 
+                    duration: track.duration, 
+                    fileKey: fileKey,
+                    lyrics: track.lyrics, // Garante que novas propriedades sejam salvas
+                    prompter: track.prompter
                 });
-                log(`Arquivo "${track.title}" salvo com a chave: ${fileKey}`);
-                tracksWithKeys.push({ title: track.title, artist: track.artist, delay: track.delay, duration: track.duration, fileKey: fileKey });
             } else {
                 tracksWithKeys.push(track);
             }
         }
-        log(`Sucesso: ${tracksWithKeys.length} faixas salvas e referenciadas.`);
         const playlistData = {
             id: state.isEditing ? state.playlists[state.currentPlaylistIndex].id : 'p' + Date.now(),
             name: name,
             coverKey: coverKey,
             tracks: tracksWithKeys
         };
-        try {
-            if (state.isEditing) {
-                state.playlists[state.currentPlaylistIndex] = playlistData;
-            } else {
-                state.playlists.push(playlistData);
-            }
-            await dbActions.put(PLAYLISTS_STORE, playlistData);
-            log('Playlist salva com sucesso no IndexedDB.');
-            closeModal();
-            await loadPlaylists();
-        } catch (e) {
-            log(`ERRO fatal: Falha ao salvar a playlist: ${e.message}`);
-        }
+        await dbActions.put(PLAYLISTS_STORE, playlistData);
+        closeModal();
+        await loadPlaylists();
     }
 
     async function removePlaylist() {
@@ -323,11 +312,9 @@ function isAppleMobile() {
                 if (track.fileKey) await dbActions.delete(FILES_STORE, track.fileKey);
             }
             await dbActions.delete(PLAYLISTS_STORE, playlistToRemove.id);
-            state.playlists.splice(state.currentPlaylistIndex, 1);
-            renderPlaylists();
             closeModal();
+            await loadPlaylists();
             showScreen('#screenLibrary');
-            $('#headerTitle').textContent = 'Minhas Playlists';
         }
     }
 
@@ -356,320 +343,217 @@ function isAppleMobile() {
     function renderList() {
         const tracks = state.playlists[state.currentPlaylistIndex].tracks;
         const list = $('#listMode');
-        list.innerHTML = tracks.length === 0 ? '<p class="empty-message">Nenhuma faixa. Edite a playlist para adicionar.</p>' : '';
-        tracks.forEach((track, i) => {
+        list.innerHTML = '';
+        tracks.forEach(function(track, i) {
             const row = document.createElement('div');
             row.className = 'row';
             row.dataset.trackIndex = i;
             row.draggable = true;
-            row.innerHTML = `
-                <div class="num">${i + 1}</div>
-                <div class="meta">
-                    <div class="title">${track.title}</div>
-                    <div class="artist">${track.artist}</div>
-                </div>
-                <div class="duration">${track.duration}</div>
-                <input type="number" class="delay-input" value="${track.delay || 0}" min="0" max="300" step="1">
-            `;
-            setupTrackEventListeners(row, track, i);
+            row.innerHTML = `<div class="num">${i + 1}</div><div class="meta"><div class="title">${track.title}</div><div class="artist">${track.artist}</div></div><div class="duration">${track.duration}</div><input type="number" class="delay-input" value="${track.delay || 0}" min="0" max="300" step="1"><button class="btn-prompter-toggle" aria-label="Teleprompter"><svg viewBox="0 0 24 24"><path d="M14 10H2V8h12v2zm0 4H2v-2h12v2zm-4 4H2v-2h8v2zm-2.01-1.25V18l2.25 1.5L16 18v-1.25c0-.83.67-1.5 1.5-1.5h1c.83 0 1.5.67 1.5 1.5v2.5a1.5 1.5 0 01-1.5 1.5H12c-.55 0-1-.45-1-1v-2h-1zM22 6V3H2v3h20zM2 3h20v-1H2v1z"></path></svg></button>`;
+            const prompterContainer = document.createElement('div');
+            prompterContainer.className = 'prompter-container';
+            prompterContainer.style.display = 'none';
+            const fontSize = (track.prompter && track.prompter.fontSize) || 16;
+            const lyrics = track.lyrics || 'Letra não disponível.';
+            prompterContainer.innerHTML = `<div class="prompter-controls"><input type="range" class="speed-slider" min="0" max="20" step="0.1" value="0"><button class="btn-edit" aria-label="Editar">Editar</button><button class="btn-save" aria-label="Salvar" style="display:none;">Salvar</button><div class="font-size-controls"><button class="btn-font-down" aria-label="Diminuir Fonte">-A</button><button class="btn-font-up" aria-label="Aumentar Fonte">+A</button></div></div><div class="prompter-text-wrapper"><div class="prompter-text" contenteditable="false" style="font-size: ${fontSize}px;">${lyrics}</div></div>`;
             list.appendChild(row);
+            list.appendChild(prompterContainer);
+            setupTrackEventListeners(row, track, i);
         });
     }
 
     function renderPads() {
-        const tracks = state.playlists[state.currentPlaylistIndex].tracks;
         const padsContainer = $('#liveMode');
-        padsContainer.innerHTML = tracks.length === 0 ? '<p class="empty-message">Nenhuma faixa. Edite a playlist para adicionar.</p>' : '';
-        tracks.forEach((track, i) => {
+        padsContainer.innerHTML = '';
+        const tracks = state.playlists[state.currentPlaylistIndex].tracks;
+        padsContainer.innerHTML = tracks.length === 0 ? '<p class="empty-message">Nenhuma faixa.</p>' : '';
+        tracks.forEach(function(track, i) {
             const pad = document.createElement('div');
             pad.className = 'pad';
             pad.dataset.trackIndex = i;
             pad.draggable = true;
-            pad.innerHTML = `
-                <div class="big">${i + 1}</div>
-                <div class="label">${track.title}</div>
-                <div class="sub">${track.duration} • Delay ${track.delay || 0}s</div>
-            `;
+            pad.innerHTML = `<div class="big">${i + 1}</div><div class="label">${track.title}</div><div class="sub">${track.duration} • Delay ${track.delay || 0}s</div>`;
             setupTrackEventListeners(pad, track, i);
             padsContainer.appendChild(pad);
         });
     }
 
-    // --- miniPlayer FUNCTIONS ---
-    /**
-     * Função principal para tocar uma faixa pelo seu índice na playlist.
-     * Usada tanto pelo clique do usuário quanto pelo autoplay.
-     * @param {number} index O índice da faixa na playlist atual.
-     */
-    async function playTrackByIndex(index) {
+async function playTrackByIndex(index) {
+        stopMasterScroll();
         const playlist = state.playlists[state.currentPlaylistIndex];
         if (!playlist) return;
         const track = playlist.tracks[index];
-        if (!track) {
-            log(`ERRO: Faixa no índice ${index} não encontrada.`);
-            return;
-        }
+        if (!track) return;
+        state.player.currentScrollTop = 0;
 
-        log(`--- Iniciando reprodução de: "${track.title}" ---`);
+        // --- AJUSTE: Reset completo do mapa de pausas ---
+        // A linha antiga foi substituída para esvaziar completamente o array.
+        // Isso garante que a nova música comece com uma lista de pausas limpa.
+        state.player.scrollPause.pausePoints = [];
+        state.player.scrollPause.isPaused = false;
         
-        // Limpa qualquer contagem regressiva ou delay pendente
+        log(`--- Iniciando reprodução de: "${track.title}" ---`);
         $('#countdownOverlay').classList.remove('active');
-        if (state.player.countdownInterval) {
-            clearInterval(state.player.countdownInterval);
-            state.player.countdownInterval = null;
-        }
+        if (state.player.countdownInterval) clearInterval(state.player.countdownInterval);
         if (state.player.delayTimeout) clearTimeout(state.player.delayTimeout);
-
-        const miniTitle = $('#miniTitle');
-        if (miniTitle) miniTitle.textContent = track.title;
-
+        $('#miniTitle').textContent = track.title;
+        $('#miniProgress').style.width = '0%';
+        $('#miniCurrentTime').textContent = '0:00';
         try {
-            // Resetar a barra de progresso e o tempo ao carregar uma nova faixa
-            $('#miniProgress').style.width = '0%';
-            $('#miniCurrentTime').textContent = '0:00';
-
             const audioFile = await dbActions.get(FILES_STORE, track.fileKey);
-            if (!audioFile) {
-                log(`ERRO: Arquivo não encontrado no DB para "${track.title}".`);
-                return;
-            }
-            
+            if (!audioFile) { return; }
             audio.pause();
-            if (state.player.currentObjectUrl) {
-                URL.revokeObjectURL(state.player.currentObjectUrl);
-            }
-
+            if (state.player.currentObjectUrl) URL.revokeObjectURL(state.player.currentObjectUrl);
             const newUrl = URL.createObjectURL(audioFile);
             state.player.currentObjectUrl = newUrl;
             audio.src = newUrl;
             audio.volume = state.volume.current / 100;
             audio.muted = false;
             state.currentTrackIndex = index;
-
-            // Atualiza a UI para destacar a nova faixa
             updateActiveTrackUI(index);
-
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    log(`ERRO AO TOCAR: ${error.name} - ${error.message}`);
-                });
+            await audio.play();
+            startMasterScroll();
+            if (state.player.isPrompterSticky) {
+                const nextPrompterBtn = document.querySelector(`.row[data-track-index="${index}"] .btn-prompter-toggle`);
+                if (nextPrompterBtn) {
+                    setTimeout(function() { togglePrompter(nextPrompterBtn, index); }, 100);
+                }
             }
         } catch (error) {
-            log(`ERRO GERAL em playTrackByIndex: ${error.name} - ${error.message}`);
+            log(`ERRO em playTrackByIndex: ${error.name}`);
         }
     }
 
-    /**
-     * Atualiza a UI para destacar a faixa atualmente em reprodução.
-     * @param {number} index O índice da faixa a ser destacada.
-     */
     function updateActiveTrackUI(index) {
-        // Remove a classe 'active' de qualquer item anteriormente ativo
-        document.querySelectorAll('#listMode .row.active, #liveMode .pad.active').forEach(el => {
-            el.classList.remove('active');
-        });
-
-        // Adiciona a classe 'active' ao novo item na lista
+        document.querySelectorAll('#listMode .row.active, #liveMode .pad.active').forEach(function(el) { el.classList.remove('active'); });
         const activeRow = document.querySelector(`#listMode .row[data-track-index="${index}"]`);
         if (activeRow) {
             activeRow.classList.add('active');
-            // Faz a lista rolar suavemente para a faixa ativa
             activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
-
-        // Adiciona a classe 'active' ao novo item nos pads
         const activePad = document.querySelector(`#liveMode .pad[data-track-index="${index}"]`);
         if (activePad) {
             activePad.classList.add('active');
-            // Faz a grade de pads rolar suavemente para a faixa ativa
             activePad.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }
 
-    /**
-     * Para a reprodução, limpa a fonte do áudio e reseta a UI do mini-player.
-     */
     function stopAndResetPlayer() {
+        stopMasterScroll();
         audio.pause();
-        if (state.player.currentObjectUrl) {
-            URL.revokeObjectURL(state.player.currentObjectUrl);
-        }
-        audio.src = ''; // Limpa a fonte do áudio
-        
+        if (state.player.currentObjectUrl) URL.revokeObjectURL(state.player.currentObjectUrl);
+        audio.src = '';
         state.currentTrackIndex = -1;
         state.player.isPlaying = false;
         state.player.currentObjectUrl = null;
-
-        // Reseta a UI do Mini Player
         $('#miniTitle').textContent = '';
         $('#miniProgress').style.width = '0%';
         $('#miniCurrentTime').textContent = '0:00';
         $('#miniPlay').innerHTML = playPauseIcons.play;
         $('#miniPlayer').classList.remove('is-paused');
-
-        updateActiveTrackUI(-1); // Remove o destaque da faixa ativa
-        log('Player parado e resetado.');
+        updateActiveTrackUI(-1);
     }
 
-    /**
-     * Inicia a próxima faixa da playlist após um delay.
-     * Chamado quando o evento 'ended' do áudio é disparado.
-     */
     function playNextTrack() {
+        stopMasterScroll();
         const playlist = state.playlists[state.currentPlaylistIndex];
         if (!playlist || state.currentTrackIndex === -1) return;
-
+        if (state.player.isPrompterSticky) {
+            const currentPrompter = document.querySelector('.prompter-container.active');
+            if (currentPrompter) {
+                const currentBtn = currentPrompter.previousElementSibling.querySelector('.btn-prompter-toggle');
+                currentPrompter.style.display = 'none';
+                currentPrompter.classList.remove('active');
+                if (currentBtn) currentBtn.classList.remove('active');
+            }
+        }
         const currentTrack = playlist.tracks[state.currentTrackIndex];
         const delayInSeconds = currentTrack.delay || 0;
-
-        log(`Faixa terminada. Delay definido: ${delayInSeconds}s.`);
-
-        // Limpa timers anteriores para segurança
         if (state.player.delayTimeout) clearTimeout(state.player.delayTimeout);
         if (state.player.countdownInterval) clearInterval(state.player.countdownInterval);
-
-        const playNext = () => {
+        const playNext = function() {
+            $('#countdownOverlay').classList.remove('active');
             let nextIndex = state.currentTrackIndex + 1;
-            if (nextIndex >= playlist.tracks.length) {
-                log('Fim da playlist, reiniciando.');
-                nextIndex = 0; // Loop back to the start
-            }
-            log(`Tocando próxima faixa no índice: ${nextIndex}`);
+            if (nextIndex >= playlist.tracks.length) nextIndex = 0;
             playTrackByIndex(nextIndex);
         };
-
         if (delayInSeconds > 0) {
             const overlay = $('#countdownOverlay');
             const numberEl = $('#countdownNumber');
             let countdown = delayInSeconds;
-
             overlay.classList.add('active');
             numberEl.textContent = countdown;
-
-            state.player.countdownInterval = setInterval(() => {
+            state.player.countdownInterval = setInterval(function() {
                 countdown--;
                 if (countdown > 0) numberEl.textContent = countdown;
             }, 1000);
-
             state.player.delayTimeout = setTimeout(playNext, delayInSeconds * 1000);
-        } else {
-            playNext(); // Sem delay, toca imediatamente
         }
     }
 
-    /**
-     * Alterna entre tocar e pausar o áudio.
-     * Chamado pelo botão de play/pause do mini-player.
-     */
     function togglePlayPause() {
-        const playlist = state.playlists[state.currentPlaylistIndex];
-        if (state.currentTrackIndex === -1) { // No track selected yet
-            if (playlist && playlist.tracks.length > 0) {
+        if (state.currentTrackIndex === -1) {
+            if (state.playlists[state.currentPlaylistIndex] && state.playlists[state.currentPlaylistIndex].tracks.length > 0) {
                 playTrackByIndex(0);
             }
             return;
         }
-
         if (audio.paused) {
             audio.play();
+            startMasterScroll();
         } else {
             audio.pause();
+            stopMasterScroll();
         }
     }
 
-    /**
-     * Atualiza a barra de progresso e o tempo da música.
-     * Chamado pelo evento 'timeupdate' do áudio.
-     */
     function updateProgress() {
-        if (!audio.duration) return; // Evita divisão por zero se a duração não for conhecida
-        const progressPercent = (audio.currentTime / audio.duration) * 100;
-        $('#miniProgress').style.width = `${progressPercent}%`;
+        if (!audio.duration) return;
+        $('#miniProgress').style.width = `${(audio.currentTime / audio.duration) * 100}%`;
         $('#miniCurrentTime').textContent = formatTime(audio.currentTime);
     }
 
-    /**
-     * Navega para um ponto específico da música.
-     * Chamado pelo clique na barra de progresso.
-     * @param {MouseEvent} event O evento de clique.
-     */
     function seek(event) {
-        const progressBar = event.currentTarget; // O elemento com o listener (.progress-bar)
-        const clickX = event.offsetX;
-        const barWidth = progressBar.clientWidth;
-        const duration = audio.duration;
-
-        if (duration) {
-            const newTime = (clickX / barWidth) * duration;
-            audio.currentTime = newTime;
+        const progressBar = event.currentTarget;
+        if (audio.duration) {
+            audio.currentTime = (event.offsetX / progressBar.clientWidth) * audio.duration;
         }
     }
 
-    /**
-     * Pula para a próxima faixa da playlist.
-     * Chamado pelo botão 'next' do mini-player.
-     */
     function skipToNext() {
+        stopMasterScroll();
         const playlist = state.playlists[state.currentPlaylistIndex];
         if (!playlist || playlist.tracks.length === 0) return;
-
         let nextIndex = state.currentTrackIndex + 1;
-        if (nextIndex >= playlist.tracks.length) {
-            nextIndex = 0; // Volta para o início
-        }
+        if (nextIndex >= playlist.tracks.length) nextIndex = 0;
         playTrackByIndex(nextIndex);
     }
 
-    /**
-     * Pula para a faixa anterior da playlist.
-     * Chamado pelo botão 'previous' do mini-player.
-     */
     function skipToPrevious() {
+        stopMasterScroll();
         const playlist = state.playlists[state.currentPlaylistIndex];
         if (!playlist || playlist.tracks.length === 0) return;
-
-        // Se a música tocou por mais de 3s, reinicia. Senão, volta.
-        if (audio.currentTime > 3) {
-            audio.currentTime = 0;
-            return;
-        }
-
+        if (audio.currentTime > 3) { audio.currentTime = 0; return; }
         let prevIndex = state.currentTrackIndex - 1;
-        if (prevIndex < 0) {
-            prevIndex = playlist.tracks.length - 1; // Vai para o final
-        }
+        if (prevIndex < 0) prevIndex = playlist.tracks.length - 1;
         playTrackByIndex(prevIndex);
     }
 
-    /**
-     * Lida com a mudança do controle de volume global.
-     * @param {Event} event O evento de input do range slider.
-     */
     function handleVolumeChange(event) {
         const newVolume = parseInt(event.target.value, 10);
         state.volume.current = newVolume;
         audio.volume = newVolume / 100;
-
-        // Atualiza o ícone de volume para feedback visual
         const volumeIcon = $('#volumeIcon');
         if (newVolume === 0) {
-            // Ícone de Mudo
             volumeIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`;
         } else {
-            // Ícone de Volume Padrão
             volumeIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
         }
     }
 
-    /**
-     * Alterna o modo de tela cheia do aplicativo.
-     */
     function toggleFullScreen() {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                log(`Erro ao tentar entrar em tela cheia: ${err.message}`);
-            });
+            document.documentElement.requestFullscreen().catch(function() {});
         } else {
             if (document.exitFullscreen) {
                 document.exitFullscreen();
@@ -677,38 +561,259 @@ function isAppleMobile() {
         }
     }
 
-    function setupTrackEventListeners(element, track, index) {
-        const delayInput = element.querySelector('.delay-input');
-        if (delayInput) {
-            delayInput.addEventListener('input', function() {
-                const newDelay = Math.max(0, Math.min(300, parseInt(this.value || 0)));
-                const playlist = state.playlists[state.currentPlaylistIndex];
-                if (playlist && playlist.tracks[index]) {
-                    // Atualiza o estado diretamente para garantir consistência
-                    playlist.tracks[index].delay = newDelay;
-                    this.value = newDelay;
-                    dbActions.put(PLAYLISTS_STORE, playlist);
+    function startMasterScroll() {
+        stopMasterScroll();
+
+        state.player.masterScrollInterval = setInterval(function() {
+            // --- LÓGICA DE VERIFICAÇÃO DE PAUSA ---
+            const { scrollPause } = state.player;
+
+            // Se a rolagem está pausada por uma tag...
+            if (scrollPause.isPaused) {
+                // ...verifica se o tempo da pausa já acabou.
+                if (Date.now() >= scrollPause.pauseEndTime) {
+                    scrollPause.isPaused = false; // Acabou a pausa, libera a rolagem.
+                } else {
+                    return; // A pausa ainda está ativa, então não faz mais nada neste ciclo.
+                }
+            }
+            
+            // Se o player não estiver tocando, não faz nada.
+            if (!state.player.isPlaying || state.currentTrackIndex === -1) return;
+
+            const trackIndex = state.currentTrackIndex;
+            const track = state.playlists[state.currentPlaylistIndex].tracks[trackIndex];
+            const speed = (track.prompter && track.prompter.speed) || 0;
+            
+            if (speed > 0) {
+                // --- VERIFICA SE UMA NOVA PAUSA DEVE SER ACIONADA ---
+                for (const point of scrollPause.pausePoints) {
+                    // Se a rolagem atual passou da posição de uma pausa que ainda não foi disparada...
+                    if (!point.triggered && state.player.currentScrollTop >= point.position) {
+                        log(`Pausa acionada por ${point.duration / 1000}s na posição ${point.position}px.`);
+                        point.triggered = true; // Marca como disparada
+                        scrollPause.isPaused = true; // Ativa a pausa
+                        scrollPause.pauseEndTime = Date.now() + point.duration; // Define quando a pausa termina
+                        return; // Para a execução deste ciclo para iniciar a pausa
+                    }
                 }
 
-                const correspondingPad = $(`.pad[data-track-index="${index}"]`);
-                if (correspondingPad) {
-                    const subElement = correspondingPad.querySelector('.sub');
-                    if (subElement) subElement.textContent = `${track.duration} • Delay ${newDelay}s`;
+                // --- CÁLCULO E APLICAÇÃO DA ROLAGEM (se não houver pausa) ---
+                state.player.currentScrollTop += speed / 5;
+                const activePrompterWrapper = document.querySelector('.prompter-container.active .prompter-text-wrapper');
+                if (activePrompterWrapper) {
+                    const prompterContainer = activePrompterWrapper.closest('.prompter-container');
+                    const prompterTrackIndex = parseInt(prompterContainer.previousElementSibling.dataset.trackIndex);
+                    if (prompterTrackIndex === trackIndex) {
+                        activePrompterWrapper.scrollTop = state.player.currentScrollTop;
+                    }
                 }
-            });
+            }
+        }, 20);
+    }
+
+    function stopMasterScroll() {
+        if (state.player.masterScrollInterval) {
+            clearInterval(state.player.masterScrollInterval);
+            state.player.masterScrollInterval = null;
+        }
+    }
+    
+    function togglePrompter(btn, index) {
+        const row = btn.closest('.row');
+        const prompter = row.nextElementSibling;
+        const isVisible = prompter.style.display === 'flex';
+
+        // Procura por qualquer outro prompter que já esteja ativo
+        const anyActivePrompter = document.querySelector('.prompter-container.active');
+        if (anyActivePrompter) {
+            // Se encontrar, fecha-o primeiro
+            anyActivePrompter.style.display = 'none';
+            anyActivePrompter.classList.remove('active');
+            const prevBtn = anyActivePrompter.previousElementSibling.querySelector('.btn-prompter-toggle');
+            if (prevBtn) prevBtn.classList.remove('active');
         }
 
-        element.addEventListener('click', (e) => {
-            if (e.target.closest('.delay-input')) return;
-            // Se a faixa clicada já é a que está tocando, alterna play/pause.
-            if (index === state.currentTrackIndex) {
-                togglePlayPause();
-            } else {
-                // Senão, toca a nova faixa.
-                playTrackByIndex(index);
+        // Se o prompter que clicamos não era o que estava visível, nós o abrimos
+        if (!isVisible) {
+            prompter.style.display = 'flex';
+            prompter.classList.add('active');
+            btn.classList.add('active');
+            
+            // Atualiza o estado "sticky" para TRUE (o usuário quer o prompter aberto)
+            state.player.isPrompterSticky = true;
+
+            const prompterWrapper = prompter.querySelector('.prompter-text-wrapper');
+            if (prompterWrapper) {
+                // Sincroniza a posição visual com a posição "virtual" do estado
+                prompterWrapper.scrollTop = state.player.currentScrollTop;
+                
+                // Lê a letra, encontra as tags [pause:X] e prepara o mapa de pausas
+                const prompterTextEl = prompterWrapper.querySelector('.prompter-text');
+                const track = state.playlists[state.currentPlaylistIndex].tracks[index];
+                parseLyricsAndBuildPauseMap(prompterTextEl, track);
             }
+        } else {
+            // Se o prompter clicado já estava aberto, a ação de fechar desliga o modo "sticky"
+            state.player.isPrompterSticky = false;
+        }
+    }
+
+function parseLyricsAndBuildPauseMap(prompterTextEl, track) {
+        const pausePoints = [];
+        const pauseRegex = /\[pause:(\d+)\]/g;
+
+        let originalLyrics = prompterTextEl.dataset.originalLyrics || prompterTextEl.innerHTML;
+        prompterTextEl.dataset.originalLyrics = originalLyrics;
+        
+        let processedHTML = originalLyrics.replace(pauseRegex, (match, seconds) => {
+            return `<span class="pause-marker" data-duration="${parseInt(seconds, 10) * 1000}">${match}</span>`;
+        });
+        
+        prompterTextEl.innerHTML = processedHTML;
+
+        // --- LÓGICA DA "LINHA DE ATIVAÇÃO" NO TOPO ---
+
+        // 1. Calcula a altura de uma linha dinamicamente.
+        const computedStyle = window.getComputedStyle(prompterTextEl);
+        const lineHeight = parseFloat(computedStyle.lineHeight);
+        
+        // 2. Define nossa "linha de ativação" como sendo 3 linhas a partir do topo.
+        const activationMarginInLines = 15;
+        const topMargin = lineHeight * activationMarginInLines;
+
+        prompterTextEl.querySelectorAll('.pause-marker').forEach(marker => {
+            // A posição de ativação é a posição da tag MENOS a margem do topo.
+            // Isso calcula o ponto exato de scroll necessário para que a tag
+            // fique a 3 linhas do topo da tela.
+            const triggerPosition = marker.offsetTop - topMargin;
+
+            pausePoints.push({
+                // Usamos Math.max(0, ...) para garantir que o valor não seja negativo.
+                // Isso automaticamente trata as tags nas primeiras 3 linhas como
+                // um "delay inicial" (posição 0), como explicado.
+                position: Math.max(0, triggerPosition),
+                duration: parseInt(marker.dataset.duration, 10),
+                triggered: false
+            });
         });
 
+        state.player.scrollPause.pausePoints = pausePoints;
+        log(`Mapa de pausas recriado (lógica de topo): ${pausePoints.length} pausas encontradas.`);
+    }
+
+function toggleEditSave(btn) {
+        const prompterContainer = btn.closest('.prompter-container');
+        const prompterText = prompterContainer.querySelector('.prompter-text');
+        const btnSave = prompterContainer.querySelector('.btn-save');
+        const btnEdit = prompterContainer.querySelector('.btn-edit');
+        const row = prompterContainer.previousElementSibling;
+        const trackIndex = parseInt(row.dataset.trackIndex);
+        const track = state.playlists[state.currentPlaylistIndex].tracks[trackIndex];
+        const isEditing = prompterText.contentEditable === 'true';
+        
+        if (isEditing) {
+            prompterText.contentEditable = 'false';
+            btnSave.style.display = 'none';
+            btnEdit.style.display = 'inline-block';
+            prompterText.style.outline = 'none';
+            
+            track.lyrics = prompterText.innerText; 
+            
+            // --- AJUSTE PARA ATUALIZAÇÃO VISUAL ---
+            // Antes de redesenhar o prompter, atualizamos a fonte de dados que a 
+            // função de parse usa. Isso garante que o texto novo seja exibido.
+            prompterText.dataset.originalLyrics = track.lyrics;
+            
+            dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
+            
+            // Agora, ao chamar a função, ela usará o texto correto.
+            parseLyricsAndBuildPauseMap(prompterText, track);
+
+        } else {
+            prompterText.contentEditable = 'true';
+            btnEdit.style.display = 'none';
+            btnSave.style.display = 'inline-block';
+            prompterText.style.outline = '2px solid var(--accent)';
+            prompterText.focus();
+        }
+        prompterText.removeEventListener('paste', handlePaste);
+        prompterText.addEventListener('paste', handlePaste);
+    }
+
+    function handlePaste(e) {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+        document.execCommand('insertText', false, text);
+    }
+
+    function adjustFontSize(btn, direction) {
+        const prompterContainer = btn.closest('.prompter-container');
+        const prompterText = prompterContainer.querySelector('.prompter-text');
+        const row = prompterContainer.previousElementSibling;
+        const trackIndex = parseInt(row.dataset.trackIndex);
+        const track = state.playlists[state.currentPlaylistIndex].tracks[trackIndex];
+        if (!track.prompter) {
+            track.prompter = {};
+        }
+        let currentSize = parseFloat(track.prompter.fontSize) || 16;
+        let newSize = currentSize + (direction * 2);
+        if (newSize < 12) newSize = 12;
+        if (newSize > 40) newSize = 40;
+        prompterText.style.fontSize = `${newSize}px`;
+        track.prompter.fontSize = newSize;
+        // --- RE-MAPEIA AS PAUSAS COM O NOVO TAMANHO DE FONTE ---
+        parseLyricsAndBuildPauseMap(prompterText, track);
+        dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
+    }
+
+    function setupTrackEventListeners(element, track, index) {
+        const isRow = element.classList.contains('row');
+        if (isRow) {
+            const delayInput = element.querySelector('.delay-input');
+            if (delayInput) {
+                delayInput.addEventListener('input', function() {
+                    const newDelay = Math.max(0, Math.min(300, parseInt(this.value || 0)));
+                    track.delay = newDelay;
+                    this.value = newDelay;
+                    dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
+                    const correspondingPad = document.querySelector(`.pad[data-track-index="${index}"]`);
+                    if (correspondingPad) {
+                        const subElement = correspondingPad.querySelector('.sub');
+                        if (subElement) subElement.textContent = `${track.duration} • Delay ${newDelay}s`;
+                    }
+                });
+            }
+            const prompterBtn = element.querySelector('.btn-prompter-toggle');
+            if (prompterBtn) {
+                prompterBtn.addEventListener('click', function() { togglePrompter(prompterBtn, index); });
+                const prompterContainer = element.nextElementSibling;
+                if (prompterContainer) {
+                    const btnEdit = prompterContainer.querySelector('.btn-edit');
+                    const btnSave = prompterContainer.querySelector('.btn-save');
+                    const btnFontDown = prompterContainer.querySelector('.btn-font-down');
+                    const btnFontUp = prompterContainer.querySelector('.btn-font-up');
+                    const speedSlider = prompterContainer.querySelector('.speed-slider');
+                    if (btnEdit) btnEdit.addEventListener('click', function() { toggleEditSave(btnEdit); });
+                    if (btnSave) btnSave.addEventListener('click', function() { toggleEditSave(btnSave); });
+                    if (btnFontDown) btnFontDown.addEventListener('click', function() { adjustFontSize(btnFontDown, -1); });
+                    if (btnFontUp) btnFontUp.addEventListener('click', function() { adjustFontSize(btnFontUp, 1); });
+                    if (speedSlider) {
+                        speedSlider.value = (track.prompter && track.prompter.speed) || 0;
+                        speedSlider.addEventListener('input', function() {
+                            const newSpeed = parseFloat(speedSlider.value);
+                            if (!track.prompter) track.prompter = {};
+                            track.prompter.speed = newSpeed;
+                            dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
+                        });
+                    }
+                }
+            }
+        }
+        element.addEventListener('click', function(e) {
+            if (e.target.closest('.delay-input') || e.target.closest('.btn-prompter-toggle')) return;
+            if (index === state.currentTrackIndex) { togglePlayPause(); } else { playTrackByIndex(index); }
+        });
         element.addEventListener('touchstart', handleTouchStart, { passive: false });
         element.addEventListener('touchmove', handleTouchMove, { passive: false });
         element.addEventListener('touchend', handleTouchEnd);
@@ -720,220 +825,140 @@ function isAppleMobile() {
     }
     
     function handleDragStart(e) {
-        // Apenas permite que o arrastar comece a partir do "cabo" de numeração
-        if (!e.target.closest('.num')) {
-            e.preventDefault();
-            return;
-        }
-        state.dragSrcEl = this;
+        if (!e.target.closest('.num')) { e.preventDefault(); return; }
+        state.dragSrcEl = e.currentTarget;
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/html', this.innerHTML); // Necessário para o Firefox
-        this.classList.add('dragging');
+        e.dataTransfer.setData('text/html', e.currentTarget.innerHTML);
+        e.currentTarget.classList.add('dragging');
     }
-    
     function handleDragOver(e) {
         e.preventDefault();
-        this.classList.add('drag-over');
-        e.dataTransfer.dropEffect = 'move';
+        e.currentTarget.classList.add('drag-over');
     }
-
-    function handleDragLeave() {
-        this.classList.remove('drag-over');
+    function handleDragLeave(e) {
+        e.currentTarget.classList.remove('drag-over');
     }
-
     function handleDrop(e) {
         e.stopPropagation();
-        if (state.dragSrcEl !== this) {
-            reorderTracks(state.dragSrcEl, this);
+        if (state.dragSrcEl !== e.currentTarget) {
+            reorderTracks(state.dragSrcEl, e.currentTarget);
         }
-        handleDragEnd.call(this);
+        e.currentTarget.classList.remove('drag-over');
+        return false;
     }
-
-    function handleDragEnd() {
-        this.classList.remove('dragging');
-        $$('.row, .pad').forEach(item => item.classList.remove('drag-over'));
-        state.dragSrcEl = null;
+    function handleDragEnd(e) {
+        e.currentTarget.classList.remove('dragging');
+        document.querySelectorAll('.row.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
     }
-    
     function handleTouchStart(e) {
-        // Apenas permite que o arrastar comece a partir do "cabo" de numeração
-        if (!e.target.closest('.num')) {
-            return;
-        }
-        e.stopPropagation();
-        state.dragSrcEl = this;
-        this.classList.add('dragging');
+        if (!e.target.closest('.num')) return;
+        state.dragSrcEl = e.currentTarget;
+        e.currentTarget.classList.add('dragging');
     }
-
     function handleTouchMove(e) {
         if (!state.dragSrcEl) return;
-        e.preventDefault(); // Previne a rolagem da página enquanto arrasta um item
-        const touch = e.touches[0];
-        const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (!targetEl || !targetEl.closest('.row, .pad')) return;
-        const dropTarget = targetEl.closest('.row, .pad');
-        if (dropTarget !== state.dragSrcEl) {
-            $$('.row, .pad').forEach(el => el.classList.remove('drag-over'));
+        e.preventDefault();
+        const touchLocation = e.targetTouches[0];
+        const target = document.elementFromPoint(touchLocation.clientX, touchLocation.clientY);
+        const dropTarget = target ? target.closest('.row') : null;
+        document.querySelectorAll('.row.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
+        if (dropTarget && dropTarget !== state.dragSrcEl) {
             dropTarget.classList.add('drag-over');
         }
     }
-
     function handleTouchEnd(e) {
-        e.stopPropagation();
         if (!state.dragSrcEl) return;
-        const touch = e.changedTouches[0];
-        const dropTargetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-        if (dropTargetEl) {
-            const dropTarget = dropTargetEl.closest('.row, .pad');
-            if (dropTarget && dropTarget !== state.dragSrcEl) {
-                reorderTracks(state.dragSrcEl, dropTarget);
-            }
+        const dropTarget = document.querySelector('.row.drag-over');
+        if (dropTarget) {
+            reorderTracks(state.dragSrcEl, dropTarget);
         }
-        handleTouchEndCleanUp();
-    }
-    
-    function handleTouchEndCleanUp() {
-        if (state.dragSrcEl) {
-            state.dragSrcEl.classList.remove('dragging');
-        }
-        $$('.row, .pad').forEach(el => el.classList.remove('drag-over'));
+        state.dragSrcEl.classList.remove('dragging');
+        document.querySelectorAll('.row.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
         state.dragSrcEl = null;
     }
-    
-    function reorderTracks(sourceEl, targetEl) {
-        const fromIndex = parseInt(sourceEl.dataset.trackIndex);
-        const toIndex = parseInt(targetEl.dataset.trackIndex);
+    function handleTouchEndCleanUp() { /* Deprecated */ }
+    function reorderTracks(fromEl, toEl) {
+        const fromIndex = parseInt(fromEl.dataset.trackIndex);
+        const toIndex = parseInt(toEl.dataset.trackIndex);
         const tracks = state.playlists[state.currentPlaylistIndex].tracks;
-        const [draggedItem] = tracks.splice(fromIndex, 1);
-        tracks.splice(toIndex, 0, draggedItem);
+        const [movedItem] = tracks.splice(fromIndex, 1);
+        tracks.splice(toIndex, 0, movedItem);
         dbActions.put(PLAYLISTS_STORE, state.playlists[state.currentPlaylistIndex]);
         renderList();
         renderPads();
     }
 
-    // ===== Inicialização do App =====
     async function init() {
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Registra o Service Worker para habilitar a funcionalidade PWA
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                    navigator.serviceWorker.register('./sw.js').then(registration => {
-                        log('ServiceWorker registrado com sucesso.');
-                    }).catch(err => {
-                        log(`Falha no registro do ServiceWorker: ${err}`);
-                    });
-                });
-            }
-
-            // Oculta a barra de volume em dispositivos Apple, agora que a detecção foi confirmada.
-            // Usamos JS diretamente para evitar problemas de especificidade ou cache do CSS.
-            if (isAppleMobile()) {
-                const volumeBar = $('.volume-global');
-                if (volumeBar) {
-                    volumeBar.style.display = 'none';
-                }
-                
-            }
-
-            // Inicializar elemento de áudio
-            audio = $('#playerMedia');
-            if (!audio) { // Fallback se o elemento não existir no HTML
-                audio = new Audio();
-                log('AVISO: Elemento #playerMedia não encontrado, criando um novo elemento de áudio dinamicamente.');
-            }
-
-            // Pré-carregar áudio no iOS após interação do usuário
-            document.body.addEventListener('touchstart', () => {
-                if (!audio.src) {
-                    audio.load();
-                    log('Pré-carregando áudio no iOS');
-                }
-            }, { once: true });
+        document.addEventListener('DOMContentLoaded', async function() {
             try {
-                await openDB();
-                log('Conexão com IndexedDB estabelecida.');
-            } catch (e) {
-                log(`ERRO: Falha na conexão com IndexedDB: ${e.message}`);
-            }
-            const savedTheme = localStorage.getItem('showplay_theme') || 'dark';
-            if (savedTheme) applyTheme(savedTheme);
-            
-            // --- Lógica para Logo Dinâmico com Base no Tema ---
-            const logo = $('#headerLogo');
-
-            function updateLogoForTheme(theme) {
-                if (logo) {
-                    logo.src = theme === 'light' ? 'icons/logo-light.png' : 'icons/logo-dark.png';
+                if ('serviceWorker' in navigator) {
+                    window.addEventListener('load', function() {
+                        navigator.serviceWorker.register('./sw.js').then(function() {
+                            log('ServiceWorker registrado.');
+                        }).catch(function(err) {
+                            log('Falha no registro do SW: ' + err);
+                        });
+                    });
                 }
+                if (isAppleMobile()) {
+                    const volumeBar = $('.volume-global');
+                    if (volumeBar) volumeBar.style.display = 'none';
+                }
+                audio = $('#playerMedia');
+                if (!audio) audio = new Audio();
+                document.body.addEventListener('touchstart', function() {
+                    if (!audio.src) {
+                        const promise = audio.play();
+                        if (promise !== undefined) {
+                            promise.then(function() { audio.pause(); }).catch(function() {});
+                        }
+                    }
+                }, { once: true });
+                await openDB();
+                await loadPlaylists();
+                setupPlaylistModal();
+                setupNavigation(state, renderPlaylists, showScreen);
+                setupViewToggle();
+                const logo = $('#headerLogo');
+                const savedTheme = localStorage.getItem('showplay_theme') || 'dark';
+                function updateLogoForTheme(theme) { if (logo) logo.src = theme === 'light' ? 'icons/logo-light.png' : 'icons/logo-dark.png'; }
+                function handleThemeToggle() {
+                    const nextTheme = (localStorage.getItem('showplay_theme') || 'dark') === 'light' ? 'dark' : 'light';
+                    applyTheme(nextTheme);
+                    localStorage.setItem('showplay_theme', nextTheme);
+                    updateLogoForTheme(nextTheme);
+                }
+                applyTheme(savedTheme);
+                updateLogoForTheme(savedTheme);
+                $('#themeToggle').addEventListener('click', handleThemeToggle);
+                $('#miniPlay').addEventListener('click', togglePlayPause);
+                audio.addEventListener('ended', playNextTrack);
+                $('#volumeGlobal').addEventListener('input', handleVolumeChange);
+                $('#miniNext').addEventListener('click', skipToNext);
+                $('#miniPrev').addEventListener('click', skipToPrevious);
+                $('#fullscreenBtn').addEventListener('click', toggleFullScreen);
+                audio.addEventListener('play', function() {
+                    state.player.isPlaying = true;
+                    $('#miniPlay').innerHTML = playPauseIcons.pause;
+                    $('#miniPlayer').classList.remove('is-paused');
+                    document.querySelectorAll('.row.active, .pad.active').forEach(function(el) { el.classList.remove('paused'); });
+                });
+                audio.addEventListener('pause', function() {
+                    state.player.isPlaying = false;
+                    $('#miniPlay').innerHTML = playPauseIcons.play;
+                    $('#miniPlayer').classList.add('is-paused');
+                    document.querySelectorAll('.row.active, .pad.active').forEach(function(el) { el.classList.add('paused'); });
+                });
+                audio.addEventListener('timeupdate', updateProgress);
+                $('.progress-bar').addEventListener('click', seek);
+                const debugLog = $('#debugLog');
+                if (debugLog) {
+                    debugLog.addEventListener('click', function() { $('#debugLogContent').innerHTML = ''; });
+                }
+                showScreen('#screenLibrary');
+            } catch (error) {
+                document.body.innerHTML = `<div style="color:white; padding: 20px;"><h1>Erro Crítico</h1><p>${error.message}</p><pre>${error.stack}</pre></div>`;
             }
-
-            function handleThemeToggle() {
-                // Lê o tema atual da fonte de verdade (localStorage) para evitar inconsistências do DOM
-                const currentTheme = localStorage.getItem('showplay_theme') || 'dark';
-                const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
-                
-                // Usa a função do módulo para aplicar o tema visualmente
-                applyTheme(nextTheme);
-                // Salva a nova preferência
-                localStorage.setItem('showplay_theme', nextTheme);
-                updateLogoForTheme(nextTheme);
-            }
-
-            // Define o logo inicial
-            updateLogoForTheme(savedTheme);
-
-            // Conecta o nosso wrapper ao botão
-            $('#themeToggle').addEventListener('click', handleThemeToggle);
-
-            await loadPlaylists(); // Carrega as playlists
-
-            setupPlaylistModal(); // Configura o modal de playlist
-
-            // Chama a função setupNavigation importada.
-            // A lógica para limpar o destaque da faixa ativa e resetar o currentTrackIndex
-            // ao clicar no botão 'Voltar' já está implementada dentro da função setupNavigation
-            // em './modules/navigation.js' (conforme discussões e diffs anteriores que removeram
-            // a definição local de setupNavigation deste arquivo).
-            // Portanto, o bloco de código que tentava reatribuir setupNavigation era redundante
-            // e causava o erro de "Assignment to constant variable".
-            setupNavigation(state, renderPlaylists, showScreen); // Passa a nova função showScreen que controla o header
-
-            setupViewToggle();
-
-            // --- Event Listeners do Player ---
-            $('#miniPlay').addEventListener('click', togglePlayPause);
-            audio.addEventListener('ended', playNextTrack);
-            $('#volumeGlobal').addEventListener('input', handleVolumeChange);
-            $('#miniNext').addEventListener('click', skipToNext);
-            $('#miniPrev').addEventListener('click', skipToPrevious);
-            $('#fullscreenBtn').addEventListener('click', toggleFullScreen);
-            audio.addEventListener('play', () => {
-                state.player.isPlaying = true;
-                $('#miniPlay').innerHTML = playPauseIcons.pause;
-                $('#miniPlayer').classList.remove('is-paused');
-                // Atualiza AMBOS os elementos (lista e pad) para remover o estado de pausa.
-                const activeTrackEls = document.querySelectorAll('.row.active, .pad.active');
-                activeTrackEls.forEach(el => el.classList.remove('paused'));
-            });
-            audio.addEventListener('pause', () => {
-                state.player.isPlaying = false;
-                $('#miniPlay').innerHTML = playPauseIcons.play;
-                $('#miniPlayer').classList.add('is-paused');
-                // Atualiza AMBOS os elementos (lista e pad) para adicionar o estado de pausa.
-                const activeTrackEls = document.querySelectorAll('.row.active, .pad.active');
-                activeTrackEls.forEach(el => el.classList.add('paused'));
-            });
-            // Adiciona listeners para a barra de progresso
-            audio.addEventListener('timeupdate', updateProgress);
-            $('.progress-bar').addEventListener('click', seek);
-
-            // Adiciona listener para limpar o log de debug
-            const debugLog = $('#debugLog');
-            if (debugLog) {
-                debugLog.addEventListener('click', () => $('#debugLogContent').innerHTML = '');
-            }
-
-            showScreen('#screenLibrary'); // Usa a nova função para o estado inicial
         });
     }
 

@@ -870,3 +870,119 @@ body.is-apple-mobile .screen-content {
         padding-top: calc(var(--mobile-header-height) + var(--pad));
     }
 }
+
+/* ====== Teleprompter Feature ====== */
+.row .btn-prompter-toggle {
+    background: transparent;
+    border: none;
+    padding: 0;
+    width: 40px;
+    height: 40px;
+    color: var(--muted);
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+.row .btn-prompter-toggle svg {
+    fill: currentColor;
+    width: 20px;
+    height: 20px;
+}
+.row.active .btn-prompter-toggle {
+    color: #fff;
+}
+.row .btn-prompter-toggle.active {
+    transform: rotate(180deg);
+    color: var(--accent);
+}
+.row.active .btn-prompter-toggle.active {
+    color: #fff;
+}
+.prompter-container {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--pad);
+    margin-top: 8px;
+    margin-bottom: 15px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.prompter-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.prompter-controls input[type="range"] {
+    flex: 1;
+    min-width: 100px;
+    -webkit-appearance: none;
+    background: var(--border);
+    height: 4px;
+    border-radius: 2px;
+    cursor: pointer;
+}
+.prompter-controls input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.prompter-controls input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+}
+.prompter-controls button {
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.prompter-controls button:hover {
+    background: var(--border);
+}
+.font-size-controls {
+    display: flex;
+    gap: 4px;
+}
+.font-size-controls button {
+    width: 50px;
+    height: 40px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+}
+.prompter-text-wrapper {
+    max-height: 385px;
+    overflow-y: auto;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 12px;
+}
+.prompter-text {
+    white-space: pre-wrap;
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--text);
+    font-family: monospace;
+    outline: none;
+}
+
+.pause-marker {
+    color: #FFD700; /* Amarelo ouro */
+    background-color: rgba(0, 0, 0, 0.4);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}

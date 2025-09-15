@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Renderização Isolado</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background-color: #121212;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #fff;
+        }
+        #list-container {
+            border: 1px solid #333;
+            padding: 10px;
+        }
+        .row {
+            background-color: #282828;
+            border: 1px solid #444;
+            padding: 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .prompter-container {
+            background-color: #181818;
+            border: 1px dashed #555;
+            padding: 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            display: none; /* Começa escondido, como no app */
+        }
+        .status {
+            font-size: 1.2em;
+            font-weight: bold;
+            padding: 20px;
+            text-align: center;
+        }
+        .success { color: #1DB954; }
+        .error { color: #F44336; }
+    </style>
+</head>
+<body>
+
+    <h1>Teste de Renderização Isolado para iPad</h1>
+    <div id="status-message" class="status"></div>
+    <div id="list-container">
+        </div>
+
+<script>
+        // 1. A variável agora é declarada no escopo principal do script.
+        const fakeState = {
+            playlists: [
+                {
+                    tracks: [
+                        { title: "Música de Teste 1", artist: "Artista A", duration: "3:45", delay: 3, lyrics: "Letra da música 1..." },
+                        { title: "Música de Teste 2", artist: "Artista B", duration: "4:15", delay: 0, lyrics: "Letra da música 2..." },
+                        { title: "Música de Teste 3", artist: "Artista C", duration: "2:50", delay: 5, lyrics: "Letra da música 3..." }
+                    ]
+                }
+            ],
+            currentPlaylistIndex: 0
+        };
+
+        // Bloco de script auto-contido, sem dependências externas.
+        try {
+            // 2. Uma versão super simplificada da sua função 'renderList'.
+            // Agora ela consegue enxergar 'fakeState' sem problemas.
+            function renderTestList() {
+                const playlist = fakeState.playlists[fakeState.currentPlaylistIndex];
+                const tracks = playlist.tracks;
+                const listContainer = document.getElementById('list-container');
+                
+                listContainer.innerHTML = ''; // Limpa o container
+
+                tracks.forEach(function(track, i) {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    row.innerHTML = '<span>' + track.title + '</span><span>' + track.duration + '</span>';
+                    
+                    const prompterContainer = document.createElement('div');
+                    prompterContainer.className = 'prompter-container';
+                    prompterContainer.innerHTML = '<p>Conteúdo do prompter para: ' + track.title + '</p>';
+                    
+                    listContainer.appendChild(row);
+                    listContainer.appendChild(prompterContainer);
+                });
+            }
+
+            // 3. Roda a função de renderização.
+            renderTestList();
+
+            // Se o código chegou até aqui sem erros, mostra uma mensagem de sucesso.
+            document.getElementById('status-message').textContent = 'SUCESSO: A renderização foi concluída sem erros.';
+            document.getElementById('status-message').className = 'status success';
+
+        } catch (error) {
+            // Se qualquer erro ocorrer, ele será capturado e exibido na tela.
+            document.getElementById('status-message').textContent = 'ERRO: ' + error.message;
+            document.getElementById('status-message').className = 'status error';
+        }
+    </script>
+
+</body>
+</html>
