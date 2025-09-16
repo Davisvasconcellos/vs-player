@@ -1,3 +1,17 @@
+/*
+ * VsPlayer - Player de Palco com Teleprompter
+ * Repositório: https://github.com/Davisvasconcellos/vs-player
+ *
+ * Copyright (c) 2025 Davis Vasconcellos
+ *
+ * Este software é licenciado sob a Creative Commons Attribution-NonCommercial 4.0 International License.
+ * Uma cópia da licença pode ser encontrada no arquivo TERMOS_DE_USO.md.
+ *
+ * Para opções de licenciamento comercial, por favor, entre em contato.
+ */
+
+
+
 import { $, $$, log, showScreen as originalShowScreen, formatTime, parseTimeToSeconds, resizeAndCompressImage } from './modules/helpers.js';
 import { applyTheme, toggleTheme } from './modules/theme.js';
 import { openDB, dbActions, PLAYLISTS_STORE, FILES_STORE } from './modules/db.js';
