@@ -5,25 +5,26 @@
 ## Demonstração
 
 ### Playlists com teleprompter integrado
+
 Crie e edite playlists offline com facilidade, tags para pause no prompter.
+
 ![Gerenciamento de Playlists](https://vsplayer.dmedia.com.br/icons/gif-1.gif)
 
-### Player em Ação modo live
+
+### Player em ação e modo Live
+
 Countdown para próxima música, modo dark/light.
-![Player em Ação](https://vsplayer.dmedia.com.br/icons/gif-2.gif)
 
-
----
-
+![Gerenciamento de Playlists](https://vsplayer.dmedia.com.br/icons/gif-2.gif)
 
 ---
+
 
 ## ✨ Funcionalidades Principais
 
 * **Gerenciamento de Playlists:** Crie, edite e organize múltiplas playlists para seus shows.
 * **Player de Áudio Integrado:** Controles completos de reprodução (play/pause, próximo/anterior, volume, barra de progresso).
 * **Teleprompter Inteligente:**
-    * Rolagem de texto sincronizada com a música.
     * Velocidade de rolagem configurável por faixa.
     * **Pausas Automáticas:** Insira a tag `[pause:10]` diretamente na letra para pausar a rolagem por 10 segundos durante solos ou partes instrumentais.
     * Controles de aumento/diminuição da fonte para melhor legibilidade.
@@ -40,6 +41,8 @@ Countdown para próxima música, modo dark/light.
 
 Você pode acessar a versão ao vivo do projeto em:
 [**https://vsplayer.dmedia.com.br/**](https://vsplayer.dmedia.com.br/)
+
+Também pode adicionar ao seu dispositivo com a opção de "adicionar a tela de início"
 
 ## 🛠️ Tecnologias Utilizadas
 
